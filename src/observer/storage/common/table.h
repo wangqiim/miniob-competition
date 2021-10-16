@@ -42,6 +42,7 @@ public:
    * @param attributes 字段
    */
   RC create(const char *path, const char *name, const char *base_dir, int attribute_count, const AttrInfo attributes[]);
+  RC drop(const char *path, const char *name, const char *base_dir);
 
   /**
    * 打开一个表

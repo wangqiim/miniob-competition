@@ -111,6 +111,34 @@ RC Table::create(const char *path, const char *name, const char *base_dir, int a
   return rc;
 }
 
+RC Table::drop(const char *path, const char *name, const char *base_dir) {
+  if (nullptr == name || common::is_blank(name)) {
+    LOG_WARN("Name cannot be empty");
+    return RC::INVALID_ARGUMENT;
+  }
+  LOG_INFO("Begin to drop table %s:%s", base_dir, name);
+  
+  RC rc = RC::SUCCESS;
+  int fd = ::unlink(path);
+  if (-1 == fd) {
+    return RC::IOERR;
+  }
+  std::string data_file = std::string(base_dir) + "/" + name + TABLE_DATA_SUFFIX;
+  data_buffer_pool_ = theGlobalDiskBufferPool();
+  // TODO(wq): how to drop all bpm file(multi pages for this file)?
+  rc = data_buffer_pool_->close_file(file_id_);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to drop disk buffer pool of data file. file name=%s", data_file.c_str());
+    return rc;
+  }
+  rc = data_buffer_pool_->drop_file(data_file.c_str());
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to drop disk buffer pool of data file. file name=%s", data_file.c_str());
+    return rc;
+  }
+  return rc; // success
+}
+
 RC Table::open(const char *meta_file, const char *base_dir) {
   // 加载元数据文件
   std::fstream fs;

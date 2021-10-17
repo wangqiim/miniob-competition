@@ -80,6 +80,12 @@ private:
 
   RC insert_record(Trx *trx, Record *record);
   RC delete_record(Trx *trx, Record *record);
+  /**
+   * 根据record中给出的rid, 修改一个record中的一个field(attr),该函数不检验字段合法性
+   * @param table_meta 所要修改的列(field)的属性（包括偏移、长度）
+   * @param value 新值
+   */
+  RC update_record_one_attr(Trx *trx, Record *record, const FieldMeta *table_meta, const Value *value);
 
 private:
   friend class RecordUpdater;

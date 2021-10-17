@@ -295,6 +295,13 @@ RC Table::make_record(int value_num, const Value *values, char * &record_out) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
     if (field->type() != value.type) {
+      // 如果field类型是date需要接受字符串,然后再检验
+      // 匹配日期为 [0000-1-1,2038-2-28]
+      if (field->type() == DATES && value.type == CHARS) {
+        if (check_date(value.data) == RC::SUCCESS) {
+          continue;
+        }
+      }
       LOG_ERROR("Invalid value type. field name=%s, type=%d, but given=%d",
         field->name(), field->type(), value.type);
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;

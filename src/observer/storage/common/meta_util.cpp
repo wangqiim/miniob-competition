@@ -21,3 +21,35 @@ std::string index_data_file(const char *base_dir, const char *table_name, const 
   return std::string(base_dir) + "/" + table_name + "-" + index_name + TABLE_INDEX_SUFFIX;
 }
 
+RC check_date(const void *data) {
+	const char *datas = reinterpret_cast<const char *>(data);
+	if (!std::regex_match(datas, std::regex("^[0-9]{0,4}-[0-9]{1,2}-[0-9]{1,2}$"))) {
+	return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+	}
+	int y = atoi(datas);
+	datas = strchr(datas, '-');
+	int m = atoi(datas + 1);
+	datas = strchr(datas, '-');
+	int d = atoi(datas + 1);
+	
+	if (y < 0 || m < 0 || d < 0) {
+	return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+	}
+
+	// https://blog.csdn.net/qq_45672975/article/details/104353064
+	int leapyear = 0;
+	if ((y % 400 == 0) || (y % 4 == 0 && y % 400 != 0)){
+		leapyear = 1; 
+	}
+	if (m > 12 || m < 1 || d > 31 || d < 1 ||
+			(m == 4 || m == 6 || m == 9 || m == 11) && (d > 30) || 
+			(m == 2) && (d > 28 + leapyear)) {
+		return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+	}
+	struct myDate dt{y, m, d};
+	if (!(dt < dateUpperBound)) {
+		return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+	}
+	
+  return RC::SUCCESS;
+}

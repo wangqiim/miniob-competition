@@ -118,28 +118,45 @@ class DiskBufferPool {
 public:
   /**
   * 创建一个名称为指定文件名的分页文件
+  * 1. syscall open创建一个文件fd
+  * 2. 准备一个Page用来存文件头，并且初始化文件头
+  * 3. (Pageno(0), [page_count(1), allocated_pages(1), bitmap(0x01)]), bitmap标记已经分配的页
+  * 4. 将该page初始化(syswrite+sysclose)
   */
   RC create_file(const char *file_name);
 
   /**
    * 根据文件名打开一个分页文件，返回文件ID
+   * file_id是文件在open_list中的索引
+   * 1. 扫open_list_找到是否已经打开，如果已经打开直接返回SUCCESS
+   * 2. 否则，扫open_list找到第一个可以使用的位置,打开文件(sysopen)
+   * 3. 构造(new)一个文件头
+   * 4. 调用 allocate_block 分配一个frame用来存文件头所使的headerpage
+   * 5. 调用load_page将文件头所在的页Load到headerpage中
+   * 6. 在open_list中注册
    * @return
    */
   RC open_file(const char *file_name, int *file_id);
 
   /**
    * 关闭fileID对应的分页文件
+   * 1. unpin, force_all_pages for file_handle
+   * 2. 初始化掉open_list_
+   * 调用force_all_pages(file_id)枚举了内存里的所有frame，刷掉所有该file_id的数据page和文件头page
    */
   RC close_file(int file_id);
   
   /**
-  * 删除一个名称为指定文件名的分页文件，必须确保该文件的所有页已经被unpin(close)了
-  * TODO(wq):如何保证该文件的所有页被unpin??
+  * 删除一个名称为指定文件名的分页文件
+  * 必须确保该文件的所有页已经被unpin(close)(通过调用force_all_pages确保)
   */
   RC drop_file(const char *file_name);
 
   /**
    * 根据文件ID和页号获取指定页面到缓冲区，返回页面句柄指针。
+   * 1. 检验该页文件头已经被加载
+   * 2. 检验该文件的page_num,应该小于文件头中的page_count,同时用文件头中的bitmap检验该页已经alloc
+   * 3. 如果该页已经Load,则pin_count++
    * @return
    */
   RC get_this_page(int file_id, PageNum page_num, BPPageHandle *page_handle);
@@ -148,6 +165,7 @@ public:
    * 在指定文件中分配一个新的页面，并将其放入缓冲区，返回页面句柄指针。
    * 分配页面时，如果文件中有空闲页，就直接分配一个空闲页；
    * 如果文件中没有空闲页，则扩展文件规模来增加新的空闲页。
+   * 1. 该函数和allocblock的区别在于该函数调用allocblock与bpm交互
    */
   RC allocate_page(int file_id, BPPageHandle *page_handle);
 
@@ -204,6 +222,10 @@ protected:
    * @param page_num 如果不指定page_num 将刷新所有页
    */
   RC force_page(BPFileHandle *file_handle, PageNum page_num);
+  /**
+   * 这里完成了将该文件的headerpage和datapage全部刷盘,并且从bpm的frames_中清除,
+   * 即该文件的所有相关页都将不在内存中
+   */
   RC force_all_pages(BPFileHandle *file_handle);
   RC check_file_id(int file_id);
   RC check_page_num(PageNum page_num, BPFileHandle *file_handle);

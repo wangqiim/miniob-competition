@@ -121,6 +121,9 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   }
   exe_event->push_callback(cb);
 
+  // 不考虑并发，每个query都要初始化一次DateUtil中buf的指针，放这里应该没问题
+  theGlobalDateUtil()->Reset();
+
   switch (sql->flag) {
     case SCF_SELECT: { // select
       do_select(current_db, sql, exe_event->sql_event()->session_event());

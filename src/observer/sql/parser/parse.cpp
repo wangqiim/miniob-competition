@@ -93,7 +93,7 @@ void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t
   attr_info->name = strdup(name);
   attr_info->type = type;
   if (type == DATES) {
-    attr_info->length = 10;
+    attr_info->length = DATESSIZE;
   } else {
     attr_info->length = length;  
   }

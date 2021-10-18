@@ -23,6 +23,8 @@ See the Mulan PSL v2 for more details. */
 #define MAX_ERROR_MESSAGE 20
 #define MAX_DATA 50
 
+#define DATESSIZE 12
+
 //属性结构体
 typedef struct {
   char *relation_name;   // relation name (may be NULL) 表名

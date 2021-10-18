@@ -40,7 +40,7 @@ DefaultConditionFilter::~DefaultConditionFilter()
 
 RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right, AttrType attr_type, CompOp comp_op)
 {
-  if (attr_type < CHARS || attr_type > FLOATS) {
+  if (attr_type < CHARS || attr_type > DATES) {
     LOG_ERROR("Invalid condition with unsupported attribute type: %d", attr_type);
     return RC::INVALID_ARGUMENT;
   }
@@ -57,6 +57,7 @@ RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right, AttrT
   return RC::SUCCESS;
 }
 
+// TODO(wq): 这个函数后续需要更多的检验和转换
 RC DefaultConditionFilter::init(Table &table, const Condition &condition)
 {
   const TableMeta &table_meta = table.table_meta();
@@ -83,7 +84,12 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
     left.is_attr = false;
     left.value = condition.left_value.data;  // 校验type 或者转换类型
     type_left = condition.left_value.type;
-
+    if (condition.right_is_attr && table_meta.field(condition.right_attr.attribute_name) != nullptr && 
+        table_meta.field(condition.right_attr.attribute_name)->type() == DATES &&
+        type_left == CHARS) {
+      type_left = DATES;
+    }
+    
     left.attr_length = 0;
     left.attr_offset = 0;
   }
@@ -104,9 +110,27 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
     right.is_attr = false;
     right.value = condition.right_value.data;
     type_right = condition.right_value.type;
-
+    if (condition.left_is_attr && table_meta.field(condition.left_attr.attribute_name) != nullptr && 
+        table_meta.field(condition.left_attr.attribute_name)->type() == DATES &&
+        type_right == CHARS) {
+      type_right = DATES;
+    }
     right.attr_length = 0;
     right.attr_offset = 0;
+  }
+  
+  // 注意:如果到这里函数还没有返回，能继续执行，说明保证如果conditon中attr字段格式一定能和table_meta匹配
+  if (!condition.left_is_attr && condition.right_is_attr && table_meta.field(condition.right_attr.attribute_name)->type() == DATES) {
+    if (!theGlobalDateUtil()->Check_and_format_date(&(left.value)) == RC::SUCCESS) {
+      LOG_WARN("date type filter condition schema mismatch.");
+      return  RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
+  }
+  if (!condition.right_is_attr && condition.left_is_attr && table_meta.field(condition.left_attr.attribute_name)->type() == DATES) {
+    if (!theGlobalDateUtil()->Check_and_format_date(&(right.value)) == RC::SUCCESS) {
+      LOG_WARN("date type filter condition schema mismatch.");
+      return  RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
   }
 
   // 校验和转换
@@ -119,8 +143,30 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
   if (type_left != type_right) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
-
+  if (condition.right_is_attr == 1 && condition.left_is_attr == 0) {
+    return init(right, left, type_right, reverse_CompOp(condition.comp));
+  }
   return init(left, right, type_left, condition.comp);
+}
+
+CompOp DefaultConditionFilter::reverse_CompOp(CompOp op) {
+  switch(op) {
+    case EQUAL_TO:
+      return EQUAL_TO;
+    case LESS_EQUAL:
+      return GREAT_EQUAL;
+    case NOT_EQUAL:
+      return NOT_EQUAL;
+    case LESS_THAN:
+      return GREAT_THAN;
+    case GREAT_EQUAL:
+      return LESS_EQUAL;
+    case GREAT_THAN:
+      return LESS_THAN;
+    default:
+      return NO_OP;
+  }
+  assert(false);
 }
 
 bool DefaultConditionFilter::filter(const Record &rec) const
@@ -158,6 +204,10 @@ bool DefaultConditionFilter::filter(const Record &rec) const
       float right = *(float *)right_value;
       cmp_result = (int)(left - right);
     } break;
+    case DATES: {  // 字符串日期已经被格式化了，可以直接比较
+      // 按照C字符串风格来定
+      cmp_result = strcmp(left_value, right_value);
+    }
     default: {
     }
   }

@@ -18,6 +18,8 @@ See the Mulan PSL v2 for more details. */
 #include "rc.h"
 #include "sql/parser/parse.h"
 
+#include "storage/common/meta_util.h"
+
 struct Record;
 class Table;
 
@@ -64,6 +66,8 @@ public:
   }
 
 private:
+  CompOp reverse_CompOp(CompOp op);
+
   ConDesc  left_;
   ConDesc  right_;
   AttrType attr_type_ = UNDEFINED;

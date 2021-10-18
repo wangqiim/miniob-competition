@@ -108,6 +108,7 @@ void ExecuteStage::callback_event(StageEvent *event, CallbackContext *context) {
 }
 
 void ExecuteStage::handle_request(common::StageEvent *event) {
+  RC rc;
   ExecutionPlanEvent *exe_event = static_cast<ExecutionPlanEvent *>(event);
   SessionEvent *session_event = exe_event->sql_event()->session_event();
   Query *sql = exe_event->sqls();
@@ -126,7 +127,10 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
 
   switch (sql->flag) {
     case SCF_SELECT: { // select
-      do_select(current_db, sql, exe_event->sql_event()->session_event());
+      rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
+      if (rc != RC::SUCCESS) {
+        session_event->set_response("FAILURE\n");
+      }
       exe_event->done_immediate();
     }
     break;

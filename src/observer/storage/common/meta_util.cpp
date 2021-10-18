@@ -43,7 +43,7 @@ RC DateUtil::Check_and_format_date(void **data) {
 	int y = atoi(datas);
 	datas = strchr(datas, '-');
 	int m = atoi(datas + 1);
-	datas = strchr(datas, '-');
+	datas = strchr(datas + 1, '-');
 	int d = atoi(datas + 1);
 	if (y < 0 || m < 0 || d < 0) {
 		return RC::SCHEMA_FIELD_TYPE_MISMATCH;

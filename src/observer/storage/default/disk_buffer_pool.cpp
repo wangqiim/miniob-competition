@@ -79,6 +79,16 @@ RC DiskBufferPool::create_file(const char *file_name)
   return RC::SUCCESS;
 }
 
+RC DiskBufferPool::drop_file(const char *file_name) {
+  
+  int fd = ::unlink(file_name);
+  if (-1 == fd) {
+    return RC::IOERR;
+  }
+  LOG_INFO("Successfully drop %s.", file_name);
+  return RC::SUCCESS;
+}
+
 RC DiskBufferPool::open_file(const char *file_name, int *file_id)
 {
   int fd, i;

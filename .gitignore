@@ -1,0 +1,6 @@
+build
+.vscode
+.gitmodules
+deps/googletest
+deps/jsoncpp
+deps/libevent

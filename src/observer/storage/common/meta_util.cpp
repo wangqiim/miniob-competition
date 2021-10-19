@@ -21,17 +21,21 @@ std::string index_data_file(const char *base_dir, const char *table_name, const 
 	return std::string(base_dir) + "/" + table_name + "-" + index_name + TABLE_INDEX_SUFFIX;
 }
 
-bool DateUtil::cmp_dateUpperBound(int y, int m, int d) {
-	if (y != y_) {
-		return y < y_;
+bool DateUtil::check_dateRange(int y, int m, int d) {
+	bool isvalid = true;
+	// 1.  < 2038-3-1
+	if (y != uy_) {
+		isvalid = y < uy_;
+	} else if (m != um_) {
+		isvalid = m < um_;
+	} else if (d != ud_) {
+		isvalid = d < ud_;
 	}
-	if (m != m_) {
-		return m < m_;
-	}
-	if (d != d_) {
-		return d < d_;
-	}
-	return false;
+	if (isvalid == false)
+		return false;
+	// 2. [1970-01-01~
+	isvalid = (y >= 1970);
+	return isvalid;
 }
 
 RC DateUtil::Check_and_format_date(void **data) {
@@ -59,7 +63,7 @@ RC DateUtil::Check_and_format_date(void **data) {
 			(m == 2) && (d > 28 + leapyear)) {
 		return RC::SCHEMA_FIELD_TYPE_MISMATCH;
 	}
-	if (!cmp_dateUpperBound(y, m, d)) {
+	if (!check_dateRange(y, m, d)) {
 		return RC::SCHEMA_FIELD_TYPE_MISMATCH;
 	}
 	// 2. date format

@@ -38,9 +38,12 @@ public:
 	/**
 	 * @param y,m,d 日期上界
 	 */
-	DateUtil(int y, int m, int d, int size, int bufsize) : y_(y), m_(m), d_(d), size_(size), bufsize_(bufsize) {
+	DateUtil(int y, int m, int d, int size, int bufsize) : uy_(y), um_(m), ud_(d), size_(size), bufsize_(bufsize) {
 		start_ = new char[bufsize];
 		curr_ = start_;
+		ly_ = 1970;
+		lm_ = 1;
+		ld_ = 1;
 	}
 	~DateUtil() { delete[] start_; }
 	
@@ -52,8 +55,8 @@ public:
 	RC Check_and_format_date(void **data);
 
 private:
-	// 日期小于[2038-03-01]
-	bool cmp_dateUpperBound(int y, int m, int d);
+	// 日期范围[1970-01-01 ~ 2038-03-01)
+	bool check_dateRange(int y, int m, int d);
 	
 	char *alloc() {
 		char *head = curr_;
@@ -62,9 +65,12 @@ private:
 		return head;
 	};
 
-	int y_;
-	int m_;
-	int d_;
+	int uy_;
+	int um_;
+	int ud_;
+	int ly_; // 日期下界1970-01-01
+	int lm_;
+	int ld_;
 	int size_; // 每个Date字段分配的长度
 	int bufsize_;
 	char *start_;

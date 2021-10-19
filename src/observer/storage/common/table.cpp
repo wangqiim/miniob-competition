@@ -602,7 +602,12 @@ RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value
     return RC::SCHEMA_FIELD_NOT_EXIST;
   }
   if (fieldMeta->type() != value->type) {
-    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    if (fieldMeta->type() == DATES && value->type == CHARS &&
+        theGlobalDateUtil()->Check_and_format_date(&(((Value *)value)->data)) == RC::SUCCESS) {
+        ((Value *)value)->type = DATES;
+    } else {
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
   }
   RecordUpdater updater(*this, trx, fieldMeta, value);
   rc = scan_record(trx, filter, -1, &updater, record_reader_update_adapter);

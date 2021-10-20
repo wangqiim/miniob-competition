@@ -42,7 +42,7 @@ typedef enum {
 } CompOp;
 
 //属性值类型
-typedef enum { UNDEFINED, CHARS, INTS, FLOATS, DATES } AttrType;
+typedef enum { UNDEFINED, CHARS, INTS, DATES, FLOATS } AttrType;
 
 //属性值
 typedef struct _Value {

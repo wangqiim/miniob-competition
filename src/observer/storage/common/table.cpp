@@ -302,6 +302,15 @@ RC Table::make_record(int value_num, const Value *values, char * &record_out) {
           continue;
         }
       }
+      // 浮点数字段也可以insert value int,由于底层存储格式不一样,因此需要做转换
+      // https://github.com/wangqiim/miniob/issues/2
+      if (field->type() == FLOATS && value.type == INTS) {
+        Value &tvalue = (Value &)value;
+        tvalue.type = FLOATS;
+        *((float *)(tvalue.data)) = *((int *)(tvalue.data));
+        continue;
+      }
+
       LOG_ERROR("Invalid value type. field name=%s, type=%d, but given=%d",
         field->name(), field->type(), value.type);
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;

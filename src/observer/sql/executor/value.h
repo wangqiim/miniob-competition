@@ -53,8 +53,18 @@ public:
   explicit FloatValue(float value) : value_(value) {
   }
 
+  // https://github.com/wangqiim/miniob/issues/2
+  // TODO(wq): 输出需要格式化
   void to_string(std::ostream &os) const override {
-    os << value_;
+    char s[20] = {0};
+    sprintf(s, "%.2f", value_);
+    for (int i = 19; i >= 0; i--) {
+      if (!s[i] == 0 && s[i] != '0' && s[i] != '.') {
+        break;
+      }
+      s[i] = 0;
+    }
+    os << s;
   }
 
   int compare(const TupleValue &other) const override {

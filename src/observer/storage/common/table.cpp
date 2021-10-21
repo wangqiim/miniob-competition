@@ -118,23 +118,42 @@ RC Table::drop(const char *path, const char *name, const char *base_dir) {
   }
   LOG_INFO("Begin to drop table %s:%s", base_dir, name);
   
+
   RC rc = RC::SUCCESS;
-  int fd = ::unlink(path);
-  if (-1 == fd) {
-    return RC::IOERR;
-  }
+  // 1. drop table data file
   std::string data_file = std::string(base_dir) + "/" + name + TABLE_DATA_SUFFIX;
   data_buffer_pool_ = theGlobalDiskBufferPool();
-  // TODO(wq): how to drop all bpm file(multi pages for this file)?
   rc = data_buffer_pool_->close_file(file_id_);
   if (rc != RC::SUCCESS) {
-    LOG_ERROR("Failed to drop disk buffer pool of data file. file name=%s", data_file.c_str());
+    LOG_ERROR("Failed to close disk buffer pool of data file. file name=%s", data_file.c_str());
     return rc;
   }
   rc = data_buffer_pool_->drop_file(data_file.c_str());
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to drop disk buffer pool of data file. file name=%s", data_file.c_str());
     return rc;
+  }
+
+  // 2. drop index data file
+  for (int i = 0; i < indexes_.size(); i++) {
+    std::string index_file = index_data_file(base_dir_.c_str(), name, indexes_[i]->index_meta().name());
+    // 也许 dynamic_cast 更好
+    rc = reinterpret_cast<BplusTreeIndex *>(indexes_[i])->close();
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to close disk buffer pool of index file. file name=%s", index_file.c_str());
+      return rc;
+    }
+    rc = data_buffer_pool_->drop_file(index_file.c_str());
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to drop disk buffer pool of index file. file name=%s", index_file.c_str());
+      return rc;
+    }
+  }
+  
+  // 3. drop data meta file
+  int fd = ::unlink(path);
+  if (-1 == fd) {
+    return RC::IOERR;
   }
   return rc; // success
 }

@@ -326,6 +326,9 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
         }
       }
     }
+    if (attr.relation_name != nullptr && 0 != strcmp(table_name, attr.relation_name)) {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
   }
 
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件

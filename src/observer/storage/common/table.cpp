@@ -628,12 +628,17 @@ RC Table::update_record_one_attr(Trx *trx, Record *record, const FieldMeta *fiel
   RC rc = RC::SUCCESS;
   // 这里不考虑事务，直接原地修改
   // index应该是多余的，先保留
+  rc = record_handler_->get_record(&(record->rid), record);
   rc = delete_entry_of_indexes(record->data, record->rid, false);// 重复代码 refer to commit_delete
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to update phase 1 indexes of record (rid=%d.%d). rc=%d:%s",
               record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
     return rc;
   }
+  
+  memcpy(record->data + fieldMeta->offset(), value->data, fieldMeta->len());
+  rc = record_handler_->update_record(record);
+
   rc = insert_entry_of_indexes(record->data, record->rid);
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to update phase 2 indexes of record (rid=%d.%d). rc=%d:%s",
@@ -641,9 +646,6 @@ RC Table::update_record_one_attr(Trx *trx, Record *record, const FieldMeta *fiel
     return rc;
   }
 
-  rc = record_handler_->get_record(&(record->rid), record);
-  memcpy(record->data + fieldMeta->offset(), value->data, fieldMeta->len());
-  rc = record_handler_->update_record(record);
   return rc;
 }
 

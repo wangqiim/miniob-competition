@@ -19,6 +19,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/parse.h"
 #include "rc.h"
 #include "storage/common/meta_util.h"
+#include "sql/executor/tuple.h"
 
 class SessionEvent;
 

@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_SQL_EXECUTOR_EXECUTION_NODE_H_
 
 #include <vector>
+#include <map>
 #include "storage/common/condition_filter.h"
 #include "sql/executor/tuple.h"
 
@@ -43,6 +44,29 @@ private:
   Table  * table_;
   TupleSchema  tuple_schema_;
   std::vector<DefaultConditionFilter *> condition_filters_;
+};
+
+class JoinExeNode : public ExecutionNode {
+public:
+  JoinExeNode() = default;
+  ~JoinExeNode() {
+    delete condition_filter_;
+  }
+
+  RC init(Trx *trx, std::vector<TupleSet> &&tuple_sets,
+          TupleSchema &&tuple_schema,
+          CompositeJoinFilter *condition_filter,
+          std::map<std::string, std::pair<int, std::map<std::string, int>>> &&table_value_index);
+
+  RC execute(TupleSet &tuple_set) override;
+
+private:
+  Trx *trx_ = nullptr;
+  std::vector<TupleSet> tuple_sets_;
+  CompositeJoinFilter *condition_filter_;
+  TupleSchema  tuple_schema_;
+  // {table_name: (table_index, {value_name: value_index})}
+  std::map<std::string, std::pair<int, std::map<std::string, int>>> table_value_index_;
 };
 
 #endif //__OBSERVER_SQL_EXECUTOR_EXECUTION_NODE_H_

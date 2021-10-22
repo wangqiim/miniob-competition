@@ -16,10 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include "storage/common/table.h"
 #include "common/log/log.h"
 
-Tuple::Tuple(const Tuple &other) {
-  LOG_PANIC("Copy constructor of tuple is not supported");
-  exit(1);
-}
+Tuple::Tuple(const Tuple &other) = default;
 
 Tuple::Tuple(Tuple &&other) noexcept : values_(std::move(other.values_)) {
 }

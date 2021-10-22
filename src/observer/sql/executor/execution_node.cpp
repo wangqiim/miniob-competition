@@ -48,3 +48,37 @@ RC SelectExeNode::execute(TupleSet &tuple_set) {
   TupleRecordConverter converter(table_, tuple_set);
   return table_->scan_record(trx_, &condition_filter, -1, (void *)&converter, record_reader);
 }
+
+RC JoinExeNode::init(Trx *trx, std::vector<TupleSet> &&tuple_sets,
+                     TupleSchema &&tuple_schema,
+                     CompositeJoinFilter *condition_filter,
+                     std::map<std::string, std::pair<int, std::map<std::string, int>>> &&table_value_index) {
+  trx_ = trx;
+  tuple_sets_ = std::move(tuple_sets);
+  condition_filter_ = condition_filter;
+  tuple_schema_ = tuple_schema;
+  table_value_index_ = std::move(table_value_index);
+  return RC::SUCCESS;
+}
+
+RC JoinExeNode::execute(TupleSet &tuple_set) {
+  tuple_set.set_schema(tuple_schema_);
+  for (auto iter = TupleSetDescartesIterator(&tuple_sets_); !iter.End(); ++iter) {
+    std::unique_ptr<std::vector<Tuple>> tuples = *iter;
+    if (condition_filter_->filter(tuples.get())) {
+      Tuple validate_tuple;
+      for(const auto & field :tuple_schema_.fields()) {
+        auto find_table_index = table_value_index_.find(field.table_name());
+        assert(find_table_index != table_value_index_.end());
+        int table_index = find_table_index->second.first;
+        std::map<std::string, int> &value_index_map = find_table_index->second.second;
+        auto find_value_index = value_index_map.find(field.field_name());
+        assert(find_value_index != value_index_map.end());
+        int value_index = find_value_index->second;
+        validate_tuple.add(tuples->at(table_index).get_pointer(value_index));
+      }
+      tuple_set.add(std::move(validate_tuple));
+    }
+  }
+  return RC::SUCCESS;
+}

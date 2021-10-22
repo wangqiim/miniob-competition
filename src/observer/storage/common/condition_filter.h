@@ -15,6 +15,8 @@ See the Mulan PSL v2 for more details. */
 #ifndef __OBSERVER_STORAGE_COMMON_CONDITION_FILTER_H_
 #define __OBSERVER_STORAGE_COMMON_CONDITION_FILTER_H_
 
+#include <sql/executor/value.h>
+#include <sql/executor/tuple.h>
 #include "rc.h"
 #include "sql/parser/parse.h"
 
@@ -94,5 +96,54 @@ private:
   int                           filter_num_ = 0;
   bool                          memory_owner_ = false; // filters_的内存是否由自己来控制
 };
+
+
+struct JoinConDesc {
+  int table_index;
+  int value_index;
+};
+
+class JoinFilter {
+public:
+  virtual ~JoinFilter() = default;
+
+  /**
+   * Filter cross multi table
+   * @param rec
+   * @return true means match condition, false means failed to match.
+   */
+  virtual bool filter(std::vector<Tuple> *tuples) const = 0;
+};
+
+class DefaultInnerJoinFilter : public JoinFilter {
+public:
+  DefaultInnerJoinFilter() = default;
+  virtual ~DefaultInnerJoinFilter();
+  // tuples中的每个Tuple对应一个table的Tuple，JoinConDesc.table_index是tuples的下标
+  // 每个Tuple中的vector<TupleValue>表示table中的一行数据，JoinConDesc.value_index是vector<TupleValue>的下标
+  virtual bool filter(std::vector<Tuple> *tuples) const;
+
+  RC init(const JoinConDesc &left, const JoinConDesc &right, CompOp comp_op);
+
+private:
+  JoinConDesc  left_;
+  JoinConDesc  right_;
+  CompOp   comp_op_ = NO_OP;
+};
+
+class CompositeJoinFilter : public JoinFilter {
+public:
+  CompositeJoinFilter() = default;
+  virtual ~CompositeJoinFilter();
+
+  RC init(std::vector<DefaultInnerJoinFilter *> &&filters, bool own_memory=false);
+  virtual bool filter(std::vector<Tuple> *tuples) const;
+
+private:
+  std::vector<DefaultInnerJoinFilter *> filters_;
+  bool memory_owner_ = false; // filters_的内存是否由自己来控制
+};
+
+
 
 #endif // __OBSERVER_STORAGE_COMMON_CONDITION_FILTER_H_

@@ -147,6 +147,61 @@ private:
   TupleSchema schema_;
 };
 
+class TupleSetDescartesIterator {
+public:
+  explicit TupleSetDescartesIterator(std::vector<TupleSet> *tuple_sets): tuple_sets_(tuple_sets) {
+    for (const auto & tuple_set : *tuple_sets) {
+      sizes_.push_back(tuple_set.size());
+      indexes_.push_back(0);
+    }
+  }
+
+  ~TupleSetDescartesIterator() {
+    std::vector<int> tmp;
+    sizes_.swap(tmp);
+    std::vector<int> tmp2;
+    sizes_.swap(tmp2);
+    // 迭代器并不拥有tuple_sets_
+  }
+
+  std::unique_ptr<std::vector<Tuple>> operator *() {
+    auto tuple_result = std::make_unique<std::vector<Tuple>>();
+    int value_index;
+    for (int table_index = 0; table_index < indexes_.size(); ++table_index) {
+      value_index = indexes_[table_index];
+      if (value_index < sizes_[table_index]) {
+        TupleSet &tuple_set = (*tuple_sets_)[table_index];
+        tuple_result->push_back(tuple_set.get(value_index));
+      }
+    }
+    return tuple_result;
+  }
+
+  void operator ++() {
+    int i = indexes_.size() - 1;
+    while(i >= 0) {
+      if (indexes_[i] < sizes_[i] - 1) {
+        indexes_[i]++;
+        return;
+      } else {
+        indexes_[i] = 0;
+        i--;
+      }
+    }
+    end = true;
+  }
+
+  bool End() {
+    return end;
+  }
+
+private:
+  std::vector<int> sizes_;
+  std::vector<int> indexes_;
+  std::vector<TupleSet> *tuple_sets_;
+  bool end = false;
+};
+
 class TupleRecordConverter {
 public:
   TupleRecordConverter(Table *table, TupleSet &tuple_set);

@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 
 #include <string>
 #include <sstream>
+#include <map>
 
 #include "execute_stage.h"
 
@@ -27,7 +28,6 @@ See the Mulan PSL v2 for more details. */
 #include "event/session_event.h"
 #include "event/execution_plan_event.h"
 #include "sql/executor/execution_node.h"
-#include "sql/executor/tuple.h"
 #include "storage/common/table.h"
 #include "storage/default/default_handler.h"
 #include "storage/common/condition_filter.h"
@@ -36,6 +36,7 @@ See the Mulan PSL v2 for more details. */
 using namespace common;
 
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, SelectExeNode &select_node);
+RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, JoinExeNode &join_exe_node);
 
 //! Constructor
 ExecuteStage::ExecuteStage(const char *tag) : Stage(tag) {}
@@ -262,6 +263,11 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   std::stringstream ss;
   if (tuple_sets.size() > 1) {
     // 本次查询了多张表，需要做join操作
+    JoinExeNode join_exe_node;
+    create_join_selection_executor(trx, selects, db, std::move(tuple_sets), join_exe_node);
+    TupleSet tuple_set;
+    join_exe_node.execute(tuple_set);
+    tuple_set.print(ss);
   } else {
     // 当前只查询一张表，直接返回结果即可
     tuple_sets.front().print(ss);
@@ -307,7 +313,7 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
   for (int i = selects.attr_num - 1; i >= 0; i--) {
     const RelAttr &attr = selects.attributes[i];
     if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
-      if (0 == strcmp("*", attr.attribute_name)) {
+      if (0 == strcmp("*", attr.attribute_name) || selects.relation_num > 1) { // 多表查询时，需要先将所有字段都查询出来，在后续做筛选
         // 列出这张表所有字段
         TupleSchema::from_table(table, schema);
         break; // 没有校验，给出* 之后，再写字段的错误
@@ -345,4 +351,84 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
   }
 
   return select_node.init(trx, table, std::move(schema), std::move(condition_filters));
+}
+
+
+RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, JoinExeNode &join_exe_node) {
+  // {table_name: table}
+  auto table_map = std::make_unique<std::map<std::string, Table*>>();
+  // {table_name: (table_index, {value_name: value_index})}
+  std::map<std::string, std::pair<int, std::map<std::string, int>>> table_value_index;
+  Table *table;
+  for (int table_index = 0; table_index < tuple_sets.size(); table_index++) {
+    TupleSet &tuple_set = tuple_sets[table_index];
+    assert(!tuple_set.get_schema().fields().empty());
+    const char *table_name = tuple_set.get_schema().field(0).table_name();
+    table = DefaultHandler::DefaultHandler::get_default().find_table(db, table_name);
+    if (nullptr == table) {
+      LOG_WARN("No such table [%s] in db [%s]", table_name, db);
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+    table_map->emplace(table_name, table);
+    std::map<std::string, int> value_index_map;
+    for (int value_index = 0; value_index < tuple_set.get_schema().fields().size(); value_index++) {
+      const TupleField & tuple_field = tuple_set.get_schema().field(value_index);
+      value_index_map.emplace(tuple_field.field_name(), value_index);
+    }
+    table_value_index.emplace(table_name, std::pair<int, std::map<std::string, int>>{table_index, value_index_map});
+  }
+  // 构造多表查询返回schema
+  TupleSchema schema;
+  for (int i = selects.attr_num - 1; i >= 0; i--) {
+    const RelAttr &attr = selects.attributes[i];
+    // todo(yqs): 前置校验项，对于多表查询，必须指定relation_name
+    assert(nullptr != attr.relation_name);
+    auto find_table = table_map->find(std::string(attr.relation_name));
+    // todo(yqs): 前置校验项，relation_name必须存在，且必须存在于selects.relations
+    assert(find_table != table_map->end());
+    if (0 == strcmp("*", attr.attribute_name)) {
+      TupleSchema::from_table(find_table->second, schema);
+    } else {
+      RC rc = schema_add_field(find_table->second, attr.attribute_name, schema);
+      if (rc != RC::SUCCESS) {
+        return rc;
+      }
+    }
+  }
+
+  // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
+  std::vector<DefaultInnerJoinFilter *> condition_filters;
+  for (size_t i = 0; i < selects.condition_num; i++) {
+    const Condition &condition = selects.conditions[i];
+    if (condition.left_is_attr == 1 && condition.right_is_attr == 1) { // 两边都是属性的condition才需要做联表查询
+      // left condition
+      auto find_left_table = table_value_index.find(condition.left_attr.relation_name);
+      assert(find_left_table != table_value_index.end());
+      int left_table_index = find_left_table->second.first;
+      auto find_left_value = find_left_table->second.second.find(condition.left_attr.attribute_name);
+      assert(find_left_value != find_left_table->second.second.end());
+      int left_value_index = find_left_value->second;
+      JoinConDesc left_cond{left_table_index, left_value_index};
+      // right condition
+      auto find_right_table = table_value_index.find(condition.right_attr.relation_name);
+      assert(find_right_table != table_value_index.end());
+      int right_table_index = find_right_table->second.first;
+      auto find_right_value = find_right_table->second.second.find(condition.right_attr.attribute_name);
+      assert(find_right_value != find_right_table->second.second.end());
+      int right_value_index = find_right_value->second;
+      JoinConDesc right_cond{right_table_index, right_value_index};
+      // build condition
+      auto *condition_filter = new DefaultInnerJoinFilter();
+      condition_filter->init(left_cond, right_cond, condition.comp);
+
+      condition_filters.push_back(condition_filter);
+    }
+  }
+  auto *condition_filter = new CompositeJoinFilter();
+  condition_filter->init(std::move(condition_filters), condition_filters.size());
+
+  return join_exe_node.init(trx, std::move(tuple_sets),
+                            std::move(schema),
+                            condition_filter,
+                            std::move(table_value_index));
 }

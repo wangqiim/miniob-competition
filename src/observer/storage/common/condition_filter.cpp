@@ -123,6 +123,25 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
   return init(left, right, type_left, condition.comp);
 }
 
+bool compare_result(int cmp_result, CompOp comp_op) {
+  switch (comp_op) {
+    case EQUAL_TO:
+      return 0 == cmp_result;
+    case LESS_EQUAL:
+      return cmp_result <= 0;
+    case NOT_EQUAL:
+      return cmp_result != 0;
+    case LESS_THAN:
+      return cmp_result < 0;
+    case GREAT_EQUAL:
+      return cmp_result >= 0;
+    case GREAT_THAN:
+      return cmp_result > 0;
+    default:
+      return false;
+  }
+}
+
 bool DefaultConditionFilter::filter(const Record &rec) const
 {
   char *left_value = nullptr;
@@ -162,26 +181,7 @@ bool DefaultConditionFilter::filter(const Record &rec) const
     }
   }
 
-  switch (comp_op_) {
-    case EQUAL_TO:
-      return 0 == cmp_result;
-    case LESS_EQUAL:
-      return cmp_result <= 0;
-    case NOT_EQUAL:
-      return cmp_result != 0;
-    case LESS_THAN:
-      return cmp_result < 0;
-    case GREAT_EQUAL:
-      return cmp_result >= 0;
-    case GREAT_THAN:
-      return cmp_result > 0;
-
-    default:
-      break;
-  }
-
-  LOG_PANIC("Never should print this.");
-  return cmp_result;  // should not go here
+ return compare_result(cmp_result, comp_op_);
 }
 
 CompositeConditionFilter::~CompositeConditionFilter()
@@ -237,6 +237,56 @@ bool CompositeConditionFilter::filter(const Record &rec) const
 {
   for (int i = 0; i < filter_num_; i++) {
     if (!filters_[i]->filter(rec)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+DefaultInnerJoinFilter::~DefaultInnerJoinFilter() = default;
+
+RC DefaultInnerJoinFilter::init(const JoinConDesc &left, const JoinConDesc &right, CompOp comp_op)
+{
+  if (comp_op < EQUAL_TO || comp_op >= NO_OP) {
+    LOG_ERROR("Invalid condition with unsupported compare operation: %d", comp_op);
+    return RC::INVALID_ARGUMENT;
+  }
+
+  left_ = left;
+  right_ = right;
+  comp_op_ = comp_op;
+  return RC::SUCCESS;
+}
+
+
+bool DefaultInnerJoinFilter::filter(std::vector<Tuple> *tuples) const {
+  std::shared_ptr<TupleValue> left_value = (*tuples)[left_.table_index].get_pointer(left_.value_index);
+  std::shared_ptr<TupleValue> right_value = (*tuples)[right_.table_index].get_pointer(right_.value_index);
+  int cmp_result = left_value->compare(*right_value);
+  return compare_result(cmp_result, comp_op_);
+}
+
+CompositeJoinFilter::~CompositeJoinFilter() {
+  if (memory_owner_) {
+    for (auto & filter : filters_) {
+      delete filter;
+    }
+    std::vector<DefaultInnerJoinFilter *>().swap(filters_);
+  }
+}
+
+RC CompositeJoinFilter::init(std::vector<DefaultInnerJoinFilter *> &&filters, bool own_memory) {
+  filters_ = std::move(filters);
+  memory_owner_ = own_memory;
+  return RC::SUCCESS;
+}
+
+bool CompositeJoinFilter::filter(std::vector<Tuple> *tuples) const {
+  if (tuples->empty()) {
+    return false;
+  }
+  for (const auto & filter : filters_) {
+    if (!filter->filter(tuples)) {
       return false;
     }
   }

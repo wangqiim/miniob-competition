@@ -143,30 +143,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
   if (type_left != type_right) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
-  if (condition.right_is_attr == 1 && condition.left_is_attr == 0) {
-    return init(right, left, type_right, reverse_CompOp(condition.comp));
-  }
   return init(left, right, type_left, condition.comp);
-}
-
-CompOp DefaultConditionFilter::reverse_CompOp(CompOp op) {
-  switch(op) {
-    case EQUAL_TO:
-      return EQUAL_TO;
-    case LESS_EQUAL:
-      return GREAT_EQUAL;
-    case NOT_EQUAL:
-      return NOT_EQUAL;
-    case LESS_THAN:
-      return GREAT_THAN;
-    case GREAT_EQUAL:
-      return LESS_EQUAL;
-    case GREAT_THAN:
-      return LESS_THAN;
-    default:
-      return NO_OP;
-  }
-  assert(false);
 }
 
 bool DefaultConditionFilter::filter(const Record &rec) const
@@ -207,7 +184,7 @@ bool DefaultConditionFilter::filter(const Record &rec) const
     case DATES: {  // 字符串日期已经被格式化了，可以直接比较
       // 按照C字符串风格来定
       cmp_result = strcmp(left_value, right_value);
-    }
+    } break;
     default: {
     }
   }

@@ -66,8 +66,6 @@ public:
   }
 
 private:
-  CompOp reverse_CompOp(CompOp op);
-
   ConDesc  left_;
   ConDesc  right_;
   AttrType attr_type_ = UNDEFINED;

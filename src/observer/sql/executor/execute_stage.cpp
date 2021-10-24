@@ -38,6 +38,8 @@ using namespace common;
 
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, SelectExeNode &select_node);
 RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, JoinExeNode &join_exe_node);
+RC create_aggregate_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, AggregateExeNode &aggregate_node);
+RC aggreDesc_check_and_set(Table *table, const Aggregate &aggregate, AggreDesc &aggre_desc);
 
 //! Constructor
 ExecuteStage::ExecuteStage(const char *tag) : Stage(tag) {}
@@ -162,7 +164,15 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
 
   switch (sql->flag) {
     case SCF_SELECT: { // select
-      rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
+      
+      const Selects &selects = sql->sstr.selection;
+      // TODO(wq): 目前出现聚集函数时不允许select其他字段(parse中直接过滤了)
+      if (selects.aggre_num != 0) {
+        rc = do_aggregate(current_db, sql, exe_event->sql_event()->session_event());
+      } else {
+        rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
+      }
+      
       if (rc != RC::SUCCESS) {
         session_event->set_response("FAILURE\n");
       }
@@ -485,4 +495,148 @@ RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *
                             std::move(schema),
                             condition_filter,
                             std::move(table_value_index));
+}
+RC ExecuteStage::do_aggregate(const char *db, Query *sql, SessionEvent *session_event) {
+
+  RC rc = RC::SUCCESS;
+  Session *session = session_event->get_client()->session;
+  Trx *trx = session->current_trx();
+  const Selects &selects = sql->sstr.selection;
+  // 目前聚集函数仅仅支持单表
+  if (selects.relation_num != 1) {
+    LOG_INFO("aggregate function only support single relation");
+    return RC::INVALID_ARGUMENT;
+  }
+  const char *table_name = selects.relations[0];
+
+  AggregateExeNode *aggregate_node = new AggregateExeNode;
+  rc = create_aggregate_executor(trx, selects, db, table_name, *aggregate_node);
+  if (rc != RC::SUCCESS) {
+    delete aggregate_node;
+    end_trx_if_need(session, trx, false);
+    return rc;
+  }
+  
+  AggreSet aggreset;
+  rc = aggregate_node->execute(aggreset);
+  if (rc != RC::SUCCESS) {
+    delete aggregate_node;
+    end_trx_if_need(session, trx, false);
+    return rc;
+  }
+  // 聚集空记录时直接返回FAILURE
+  rc = aggreset.finish_aggregate();
+  if (rc != RC::SUCCESS) {
+    delete aggregate_node;
+    end_trx_if_need(session, trx, false);
+    return rc;
+  }
+  std::stringstream ss;
+  aggreset.print(ss);
+
+  session_event->set_response(ss.str());
+  end_trx_if_need(session, trx, true);
+
+  delete aggregate_node;
+  return rc;
+}
+
+// 生成最底层的aggregate 执行节点,
+RC create_aggregate_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, AggregateExeNode &aggregate_node) {
+  RC rc = RC::SUCCESS;
+  Table *table = DefaultHandler::get_default().find_table(db, table_name);
+  if (nullptr == table) {
+    LOG_WARN("No such table [%s] in db [%s]", table_name, db);
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+  std::vector<AggreDesc *> aggre_descs;
+  // 枚举所有聚集函数
+  for (int i = 0; i < selects.aggre_num; i++) {
+    AggreDesc *aggre_desc = new AggreDesc;
+    if (RC::SUCCESS != aggreDesc_check_and_set(table, selects.aggregates[i], *aggre_desc)) {
+      delete aggre_desc;
+      for (AggreDesc *& tmp_aggreDesc : aggre_descs) {
+        delete tmp_aggreDesc;
+      }
+      return RC::INVALID_ARGUMENT;
+    }
+    // 是属性时，属性是否存在，类型是否合法
+    // 属性是值时，检验是否是*,只有
+    aggre_descs.push_back(aggre_desc);
+  }
+
+  // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
+  std::vector<DefaultConditionFilter *> condition_filters;
+  for (size_t i = 0; i < selects.condition_num; i++) {
+    const Condition &condition = selects.conditions[i];
+    if ((condition.left_is_attr == 0 && condition.right_is_attr == 0) || // 两边都是值
+        (condition.left_is_attr == 1 && condition.right_is_attr == 0 && match_table(selects, condition.left_attr.relation_name, table_name)) ||  // 左边是属性右边是值
+        (condition.left_is_attr == 0 && condition.right_is_attr == 1 && match_table(selects, condition.right_attr.relation_name, table_name)) ||  // 左边是值，右边是属性名
+        (condition.left_is_attr == 1 && condition.right_is_attr == 1 &&
+            match_table(selects, condition.left_attr.relation_name, table_name) && match_table(selects, condition.right_attr.relation_name, table_name)) // 左右都是属性名，并且表名都符合
+        ) {
+      DefaultConditionFilter *condition_filter = new DefaultConditionFilter();
+      RC rc = condition_filter->init(*table, condition);
+      if (rc != RC::SUCCESS) {
+        delete condition_filter;
+        for (DefaultConditionFilter * &filter : condition_filters) {
+          delete filter;
+        }
+        return rc;
+      }
+      condition_filters.push_back(condition_filter);
+    }
+  }
+
+  return aggregate_node.init(trx, table, std::move(aggre_descs), std::move(condition_filters));
+}
+
+// TODO(wq): 目前不考虑aggre(t.*)的情况
+RC aggreDesc_check_and_set(Table *table, const Aggregate &aggregate, AggreDesc &aggre_desc) {
+  aggre_desc.aggre_type = aggregate.aggre_type;
+  aggre_desc.is_attr = aggregate.is_attr;
+  aggre_desc.is_star = 0;
+  if (aggregate.is_attr == 1) {
+    // 属性：检验字段和表名
+    aggre_desc.relation_name = aggregate.attr.relation_name;
+    if (nullptr == aggregate.attr.relation_name || 0 == strcmp(table->name(), aggregate.attr.relation_name)) {
+      // 如果表明不为空则表明需要匹配上
+      if (aggregate.attr.attribute_name != 0 && 0 == strcmp("*", aggregate.attr.attribute_name)) {
+        if (aggregate.aggre_type != AggreType::COUNTS) {
+          // 只有COUNT能匹配*
+          return RC::SCHEMA_FIELD_MISSING;
+        }
+        // 把*当作值"1",来处理，但是依然需要记录属性名为*，方便最后输出表头
+        aggre_desc.attr_name = aggregate.attr.attribute_name;
+        aggre_desc.is_attr = 0;
+        aggre_desc.is_star = 1;
+        aggre_desc.value = 1;
+        return RC::SUCCESS;
+      }
+      
+      // 检验聚合属性是否合法
+      const FieldMeta *field_meta = table->table_meta().field(aggregate.attr.attribute_name);
+      if (nullptr == field_meta) {
+        return RC::SCHEMA_FIELD_MISSING;
+      }
+      // 只能对float和int字段进行聚集
+      // TODO(wq):考虑聚合date
+      if (field_meta->type() != AttrType::INTS && field_meta->type() != AttrType::FLOATS) {
+        return RC::SCHEMA_FIELD_MISSING;
+      }
+      aggre_desc.attr_name = const_cast<char *>(field_meta->name());
+    } else {
+      // 表名不匹配: example: t.id, t却不存在
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+  } else {
+    if (aggregate.value.type == AttrType::INTS) {
+      aggre_desc.value = *((int *)(aggregate.value.data));
+    } else if(aggregate.value.type == AttrType::FLOATS) {
+      aggre_desc.value = *((float *)(aggregate.value.data));
+    } else {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+  }
+  return RC::SUCCESS;
 }

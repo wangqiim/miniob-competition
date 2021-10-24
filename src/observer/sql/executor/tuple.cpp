@@ -12,6 +12,8 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai on 2021/5/14.
 //
 
+#include <algorithm>
+
 #include "sql/executor/tuple.h"
 #include "storage/common/table.h"
 #include "common/log/log.h"
@@ -239,4 +241,146 @@ void TupleRecordConverter::add_record(const char *record) {
   tuple_set_.add(std::move(tuple));
 }
 
+void AggreSet::init(std::vector<AggreDesc *> &aggres) {
+  aggres_ = &aggres;
+  // 由于aggre_max_与aggre_min_的初始值不好决定，因此不在这里初始化
+  aggre_avg_.resize(aggres_->size(), 0);
+  aggre_sum_.resize(aggres_->size(), 0);
+  aggre_count_.resize(aggres_->size(), 0);
+}
+
+void AggreSet::update_aggre_set(int aggre_index, float value) {
+  assert(aggre_max_.size() == aggre_min_.size());
+  if (aggre_index >= aggre_max_.size()) {
+    aggre_max_.push_back(value);
+    aggre_min_.push_back(value);
+  }
+  aggre_max_[aggre_index] = std::max(aggre_max_[aggre_index], value);
+  aggre_min_[aggre_index] = std::min(aggre_min_[aggre_index], value);
+  aggre_count_[aggre_index]++;
+  aggre_sum_[aggre_index] += value;
+  aggre_avg_[aggre_index] = aggre_sum_[aggre_index] / aggre_count_[aggre_index];
+}
+
+RC AggreSet::finish_aggregate() {
+  if (aggre_max_.size() == 0) {
+    return RC::GENERIC_ERROR;
+  }
+  for (int i = 0; i < aggres_->size(); i++) {
+    switch (aggres_->at(i)->aggre_type) {
+      case MAXS:
+        tuple_.add(aggre_max_[i]);
+        break;
+      case MINS:
+        tuple_.add(aggre_min_[i]);
+        break;
+      case AVGS:
+        tuple_.add(aggre_avg_[i]);
+        break;
+      case SUMS:
+        tuple_.add(aggre_sum_[i]);
+        break;
+      case COUNTS:
+        tuple_.add(aggre_count_[i]);
+        break;
+      default:
+        LOG_PANIC("can't supported aggregate function");
+        return RC::GENERIC_ERROR;
+    }
+  }
+  return RC::SUCCESS;
+}
+
+void AggreSet::print(std::ostream &os) const {
+  //打印头
+  int aggre_num = aggres_->size();
+  for (int i = 0; i < aggre_num - 1 ; i++) {
+    aggre_type_print(os, aggres_->at(i)->aggre_type);
+    os << "(";
+    aggre_attr_print(os, i);
+    os << ") | ";
+  }
+  const AggreDesc * last_aggre = aggres_->at(aggre_num - 1);
+  aggre_type_print(os, aggres_->at(aggre_num - 1)->aggre_type);
+  os << "(";
+  aggre_attr_print(os, aggre_num - 1);
+  os << ")" << std::endl;
+  
+  //打印值
+  const std::vector<std::shared_ptr<TupleValue>> &values = tuple_.values();
+  for (std::vector<std::shared_ptr<TupleValue>>::const_iterator iter = values.begin(), end = --values.end();
+      iter != end; ++iter) {
+    (*iter)->to_string(os);
+    os << " | ";
+  }
+  values.back()->to_string(os);
+  os << std::endl;
+}
+
+void AggreSet::aggre_type_print(std::ostream &os, AggreType type) const {
+  switch (type) {
+    case MAXS:
+      os << "max";
+      break;
+    case MINS:
+      os << "min";
+      break;
+    case AVGS:
+      os << "avg";
+      break;
+    case SUMS:
+      os << "sum";
+      break;
+    case COUNTS:
+      os << "count";
+      break;
+    default:
+      LOG_PANIC("can't supported aggregate function");
+  }
+}
+
+void AggreSet::aggre_attr_print(std::ostream &os, int aggre_index) const {
+  const AggreDesc *aggre = aggres_->at(aggre_index);
+  if (aggre->is_attr == 1) {
+    if (aggre->relation_name != nullptr) {
+      os << aggre->relation_name << ".";
+    }
+    os << aggre->attr_name;
+  } else {
+    if (aggre->is_star == 1) {
+      if (aggre->relation_name != nullptr) {
+        os << aggre->relation_name << ".";
+      }
+      os << aggre->attr_name;
+    } else {
+      FloatValue(aggre->value).to_string(os);
+    }
+  }
+}
+
+void TupleAggregateUtil::aggregate(const char *record) {
+  const TableMeta &table_meta = table_->table_meta();
+  // 用该record 更新所有的 aggregate函数结果
+  for (int i = 0; i < aggres_.size(); i++) {
+    AggreDesc *cur_aggreDesc = aggres_[i];
+    if (cur_aggreDesc->is_attr == 1) {
+      const FieldMeta * field_meta = table_meta.field(cur_aggreDesc->attr_name);
+      assert(field_meta != nullptr);
+      switch (field_meta->type()) {
+        case INTS: {
+          int value = *(int*)(record + field_meta->offset());
+          aggre_set_.update_aggre_set(i, (float)value);
+        } break;
+        case FLOATS: {
+          float value = *(float *)(record + field_meta->offset());
+          aggre_set_.update_aggre_set(i, value);
+        } break;
+        default:
+          LOG_PANIC("can't aggregate date at present");
+      }
+    } else {
+      aggre_set_.update_aggre_set(i, aggres_[i]->value);
+    }
+  }
+}
 

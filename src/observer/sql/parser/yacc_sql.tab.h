@@ -105,6 +105,58 @@ extern int yydebug;
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
+/* Token kinds.  */
+#define YYEOF 0
+#define YYerror 256
+#define YYUNDEF 257
+#define SEMICOLON 258
+#define CREATE 259
+#define DROP 260
+#define TABLE 261
+#define TABLES 262
+#define INDEX 263
+#define SELECT 264
+#define DESC 265
+#define SHOW 266
+#define SYNC 267
+#define INSERT 268
+#define DELETE 269
+#define UPDATE 270
+#define LBRACE 271
+#define RBRACE 272
+#define COMMA 273
+#define TRX_BEGIN 274
+#define TRX_COMMIT 275
+#define TRX_ROLLBACK 276
+#define INT_T 277
+#define STRING_T 278
+#define FLOAT_T 279
+#define HELP 280
+#define EXIT 281
+#define DOT 282
+#define INTO 283
+#define VALUES 284
+#define FROM 285
+#define WHERE 286
+#define AND 287
+#define SET 288
+#define ON 289
+#define LOAD 290
+#define DATA 291
+#define INFILE 292
+#define EQ 293
+#define LT 294
+#define GT 295
+#define LE 296
+#define GE 297
+#define NE 298
+#define NUMBER 299
+#define FLOAT 300
+#define ID 301
+#define PATH 302
+#define SSS 303
+#define STAR 304
+#define STRING_V 305
 
 /* Value type.  */
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
@@ -120,7 +172,7 @@ union YYSTYPE
   float floats;
 	char *position;
 
-#line 124 "yacc_sql.tab.h"
+#line 176 "yacc_sql.tab.h"
 
 };
 typedef union YYSTYPE YYSTYPE;

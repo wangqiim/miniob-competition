@@ -44,6 +44,9 @@ typedef enum {
 //属性值类型
 typedef enum { UNDEFINED, CHARS, INTS, DATES, FLOATS } AttrType;
 
+//聚合函数
+typedef enum { UNDEFINEDAGG, MAXS, MINS, AVGS, SUMS, COUNTS } AggreType;
+
 //属性值
 typedef struct _Value {
   AttrType type;  // type of value
@@ -62,8 +65,18 @@ typedef struct _Condition {
   Value right_value;   // right-hand side value if right_is_attr = FALSE
 } Condition;
 
+// example: COUNT(1): {COUNTS, false, 1, null}; AVG(id): {AVGS, true, null, id}
+typedef struct _Aggregate {
+  AggreType aggre_type;
+  int       is_attr;
+  Value     value;
+  RelAttr   attr;
+} Aggregate;
+
 // struct of select
 typedef struct {
+  size_t    aggre_num;              // Length(num) of aggre func in Select clause
+  Aggregate aggregates[MAX_NUM];    // Length(num) of aggre func in Select clause
   size_t    attr_num;               // Length of attrs in Select clause
   RelAttr   attributes[MAX_NUM];    // attrs in Select clause
   size_t    relation_num;           // Length of relations in Fro clause
@@ -182,6 +195,9 @@ extern "C" {
 void relation_attr_init(RelAttr *relation_attr, const char *relation_name, const char *attribute_name);
 void relation_attr_destroy(RelAttr *relation_attr);
 
+void relation_aggre_init(Aggregate *aggregate, AggreType aggreType, int is_attr, const char *relation_name, const char *attribute_name, Value* value);
+void relation_aggre_destroy(Aggregate *aggregate);
+
 void value_init_integer(Value *value, int v);
 void value_init_float(Value *value, float v);
 void value_init_string(Value *value, const char *v);
@@ -196,6 +212,7 @@ void attr_info_destroy(AttrInfo *attr_info);
 
 void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr);
+void selects_append_aggregate(Selects *selects, Aggregate *aggregate);
 void selects_append_relation(Selects *selects, const char *relation_name);
 void selects_append_conditions(Selects *selects, Condition conditions[], size_t condition_num);
 void selects_destroy(Selects *selects);

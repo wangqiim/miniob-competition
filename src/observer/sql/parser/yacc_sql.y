@@ -16,10 +16,13 @@ typedef struct ParserContext {
   size_t condition_length;
   size_t from_length;
   size_t value_length;
+  size_t aggre_length;
   Value values[MAX_NUM];
   Condition conditions[MAX_NUM];
   CompOp comp;
-	char id[MAX_NUM];
+  Aggregate aggregates[MAX_NUM];
+  AggreType aggreType;
+  char id[MAX_NUM];
 } ParserContext;
 
 //获取子串
@@ -49,6 +52,7 @@ void yyerror(yyscan_t scanner, const char *str)
   context->select_length = 0;
   context->value_length = 0;
   context->ssql->sstr.insertion.value_num = 0;
+  context->aggre_length = 0;
   printf("parse sql failed. error=%s", str);
 }
 
@@ -102,6 +106,11 @@ ParserContext *get_context(yyscan_t scanner)
         LOAD
         DATA
         INFILE
+		MAX_T
+		MIN_T
+		AVG_T
+		SUM_T
+		COUNT_T
         EQ
         LT
         GT
@@ -381,7 +390,9 @@ select_attr:
 			relation_attr_init(&attr, $1, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
+	| aggre_func aggre_list
     ;
+
 attr_list:
     /* empty */
     | COMMA ID attr_list {
@@ -405,6 +416,45 @@ attr_list:
     	}
   	;
 
+aggre_func:
+	aggre_type LBRACE value RBRACE {
+		Aggregate aggre;
+		Value *value = &CONTEXT->values[CONTEXT->value_length - 1];
+		relation_aggre_init(&aggre, CONTEXT->aggreType, 0, NULL, NULL, value);
+		selects_append_aggregate(&CONTEXT->ssql->sstr.selection, &aggre);
+	  }
+	| aggre_type LBRACE ID RBRACE {
+		Aggregate aggre;
+		relation_aggre_init(&aggre, CONTEXT->aggreType, 1, NULL, $3, NULL);
+		selects_append_aggregate(&CONTEXT->ssql->sstr.selection, &aggre);
+	  }
+	| aggre_type LBRACE ID DOT ID RBRACE {
+		Aggregate aggre;
+		relation_aggre_init(&aggre, CONTEXT->aggreType, 1, $3, $5, NULL);
+		selects_append_aggregate(&CONTEXT->ssql->sstr.selection, &aggre);
+	  }
+	| aggre_type LBRACE STAR RBRACE {
+		// TODO(wq):仅需要支持 select COUNT(*)，不需要支持select other_aggre(*) 以及select aggre_func(table_name.*);
+		// 由于如果在语法解析里处理该问题的话，代码写的比较冗余丑陋，所以这里不检查sum(*)等这种不合法情况，丢给parse之后的stage去检验
+		Aggregate aggre;
+		relation_aggre_init(&aggre, CONTEXT->aggreType, 1, NULL, "*", NULL);
+		selects_append_aggregate(&CONTEXT->ssql->sstr.selection, &aggre);
+	}
+	;
+
+aggre_list:
+	/* empty */
+	| COMMA aggre_func aggre_list
+	;
+
+aggre_type:
+	  MAX_T { CONTEXT->aggreType = MAXS; }
+	| MIN_T { CONTEXT->aggreType = MINS; }
+	| AVG_T { CONTEXT->aggreType = AVGS; }
+	| SUM_T { CONTEXT->aggreType = SUMS; }
+	| COUNT_T { CONTEXT->aggreType = COUNTS; }
+	;
+
 rel_list:
     /* empty */
     | COMMA ID rel_list {	
@@ -417,6 +467,7 @@ where:
 				// CONTEXT->conditions[CONTEXT->condition_length++]=*$2;
 			}
     ;
+
 condition_list:
     /* empty */
     | AND condition condition_list {

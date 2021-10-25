@@ -591,7 +591,7 @@ RC create_aggregate_executor(Trx *trx, const Selects &selects, const char *db, c
   return aggregate_node.init(trx, table, std::move(aggre_descs), std::move(condition_filters));
 }
 
-// TODO(wq): 目前不考虑aggre(t.*)的情况
+// 目前不考虑aggre(t.*)的情况, 以及 aggre("as"),仅可能"aggre(attr1),其中attr1是字符串属性
 RC aggreDesc_check_and_set(Table *table, const Aggregate &aggregate, AggreDesc &aggre_desc) {
   aggre_desc.aggre_type = aggregate.aggre_type;
   aggre_desc.is_attr = aggregate.is_attr;
@@ -619,9 +619,13 @@ RC aggreDesc_check_and_set(Table *table, const Aggregate &aggregate, AggreDesc &
       if (nullptr == field_meta) {
         return RC::SCHEMA_FIELD_MISSING;
       }
-      // 只能对float和int字段进行聚集
-      // TODO(wq):考虑聚合date
-      if (field_meta->type() != AttrType::INTS && field_meta->type() != AttrType::FLOATS) {
+      // 只能对float和int和char字段进行聚集
+      // 不考虑聚合date
+      if (field_meta->type() != AttrType::INTS && field_meta->type() != AttrType::FLOATS && field_meta->type() != AttrType::CHARS) {
+        return RC::SCHEMA_FIELD_MISSING;
+      }
+      // char属性不能进行 sum 和 avg 聚合
+      if (field_meta->type() == AttrType::CHARS && (aggregate.aggre_type == AggreType::SUMS || aggregate.aggre_type == AggreType::AVGS)) {
         return RC::SCHEMA_FIELD_MISSING;
       }
       aggre_desc.attr_name = const_cast<char *>(field_meta->name());
@@ -630,6 +634,7 @@ RC aggreDesc_check_and_set(Table *table, const Aggregate &aggregate, AggreDesc &
       return RC::SCHEMA_FIELD_MISSING;
     }
   } else {
+    // 不考虑aggregate("asd")的情况
     if (aggregate.value.type == AttrType::INTS) {
       aggre_desc.value = *((int *)(aggregate.value.data));
     } else if(aggregate.value.type == AttrType::FLOATS) {

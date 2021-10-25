@@ -225,12 +225,22 @@ struct AggreDesc {
 class AggreSet {
 public:
   AggreSet() = default;
-  ~AggreSet() = default;
+  // 释放内存
+  ~AggreSet() {
+    for (int i = 0; i < aggres_->size(); i++) {
+      if (aggre_max_[i] != nullptr) {
+        delete aggre_max_[i];
+      }
+      if (aggre_min_[i] != nullptr) {
+        delete aggre_min_[i];
+      }
+    }
+  };
 
   void init(std::vector<AggreDesc *> &aggres);
   
   // 根据每一个记录更新所有聚合函数的中间属性: sum, count等
-  void update_aggre_set(int aggre_index, float value);
+  void update_aggre_set(int aggre_index, AttrType attr_type, int len, const char *value);
   
   // 生成最后的输出tuple
   RC finish_aggregate();
@@ -243,11 +253,13 @@ private:
   void aggre_attr_print(std::ostream &os, int aggre_index) const;
 
   std::vector<AggreDesc *> *aggres_;
-  std::vector<float> aggre_max_;
-  std::vector<float> aggre_min_;
+  std::vector<AttrType> aggre_attr_type_;
+
+  std::vector<char *> aggre_max_;
+  std::vector<char *> aggre_min_;
   std::vector<float> aggre_avg_;
   std::vector<float> aggre_sum_;
-  std::vector<int> aggre_count_;
+  std::vector<float> aggre_count_;
 
   Tuple tuple_;
 };

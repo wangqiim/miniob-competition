@@ -243,37 +243,102 @@ void TupleRecordConverter::add_record(const char *record) {
 
 void AggreSet::init(std::vector<AggreDesc *> &aggres) {
   aggres_ = &aggres;
-  // 由于aggre_max_与aggre_min_的初始值不好决定，因此不在这里初始化
+  aggre_attr_type_.resize(aggres_->size(), AttrType::UNDEFINED);
+  aggre_min_.resize(aggres_->size(), nullptr);
+  aggre_max_.resize(aggres_->size(), nullptr);
   aggre_avg_.resize(aggres_->size(), 0);
   aggre_sum_.resize(aggres_->size(), 0);
   aggre_count_.resize(aggres_->size(), 0);
 }
 
-void AggreSet::update_aggre_set(int aggre_index, float value) {
-  assert(aggre_max_.size() == aggre_min_.size());
-  if (aggre_index >= aggre_max_.size()) {
-    aggre_max_.push_back(value);
-    aggre_min_.push_back(value);
+void AggreSet::update_aggre_set(int aggre_index, AttrType attr_type, int len, const char *value) {
+  assert(aggre_attr_type_[aggre_index] == AttrType::UNDEFINED || aggre_attr_type_[aggre_index] == attr_type);
+  aggre_attr_type_[aggre_index] = attr_type;
+
+  if (aggre_max_[aggre_index] == nullptr) {
+    char *v_max = (char *)malloc(len);
+    char *v_min = (char *)malloc(len);
+    memcpy(v_max, value, len);
+    memcpy(v_min, value, len);
+    aggre_max_[aggre_index] = v_max;
+    aggre_min_[aggre_index] = v_min;
   }
-  aggre_max_[aggre_index] = std::max(aggre_max_[aggre_index], value);
-  aggre_min_[aggre_index] = std::min(aggre_min_[aggre_index], value);
-  aggre_count_[aggre_index]++;
-  aggre_sum_[aggre_index] += value;
-  aggre_avg_[aggre_index] = aggre_sum_[aggre_index] / aggre_count_[aggre_index];
+
+  if (attr_type == AttrType::INTS || attr_type == AttrType::FLOATS) {
+    float t = 0;
+    if (attr_type == AttrType::INTS) {
+      t = *((int *)value);
+    } else {
+      t = *((float *)value);
+    }
+  }
+  switch (attr_type) {
+    case AttrType::INTS: {
+      int t = *((int *)value);
+      if (t > *(int *)aggre_max_[aggre_index]) {
+        *(int *)aggre_max_[aggre_index] = t;
+      }
+      if (t < *(int *)aggre_min_[aggre_index]) {
+        *(int *)aggre_min_[aggre_index] = t;
+      }
+      aggre_count_[aggre_index]++;
+      aggre_sum_[aggre_index] += t;
+      aggre_avg_[aggre_index] = aggre_sum_[aggre_index] / aggre_count_[aggre_index];
+    } break;
+    case AttrType::FLOATS: {
+      float t = *((float *)value);
+      if (t > *(float *)aggre_max_[aggre_index]) {
+        *(float *)aggre_max_[aggre_index] = t;
+      }
+      if (t < *(float *)aggre_min_[aggre_index]) {
+        *(float *)aggre_min_[aggre_index] = t;
+      }
+      aggre_count_[aggre_index]++;
+      aggre_sum_[aggre_index] += t;
+      aggre_avg_[aggre_index] = aggre_sum_[aggre_index] / aggre_count_[aggre_index];
+    } break;
+    case AttrType::CHARS: {
+      if (strncmp(value, aggre_max_[aggre_index], len) > 0) {
+          memcpy(aggre_max_[aggre_index], value, len);
+      }
+      if (strncmp(value, aggre_min_[aggre_index], len) < 0) {
+          memcpy(aggre_min_[aggre_index], value, len);
+      }
+      aggre_count_[aggre_index]++;
+    } break;
+    default:
+      LOG_PANIC("can't supported aggregate attrtype %d", attr_type);
+  }
 }
 
 RC AggreSet::finish_aggregate() {
-  if (aggre_max_.size() == 0) {
+  if (aggre_max_[0] == nullptr) {
     return RC::GENERIC_ERROR;
   }
   for (int i = 0; i < aggres_->size(); i++) {
     switch (aggres_->at(i)->aggre_type) {
-      case MAXS:
-        tuple_.add(aggre_max_[i]);
-        break;
-      case MINS:
-        tuple_.add(aggre_min_[i]);
-        break;
+      case MAXS: {
+        if (aggre_attr_type_[i] == AttrType::INTS) {
+          tuple_.add(*((int *)aggre_max_[i]));
+        } else if (aggre_attr_type_[i] == AttrType::FLOATS) {
+          tuple_.add(*((float *)aggre_max_[i]));
+        } else if (aggre_attr_type_[i] == AttrType::CHARS) {
+          tuple_.add(aggre_max_[i], strlen(aggre_max_[i]));
+        } else {
+          LOG_PANIC("can't supported aggregate attrtype %d", aggre_attr_type_[i]);
+        }
+      } break;
+      case MINS: {
+        if (aggre_attr_type_[i] == AttrType::INTS) {
+          tuple_.add(*((int *)aggre_min_[i]));
+        } else if (aggre_attr_type_[i] == AttrType::FLOATS) {
+          tuple_.add(*((float *)aggre_min_[i]));
+        } else if (aggre_attr_type_[i] == AttrType::CHARS) {
+          tuple_.add(aggre_min_[i], strlen(aggre_min_[i]));
+        } else {
+          LOG_PANIC("can't supported aggregate attrtype %d", aggre_attr_type_[i]);
+        }
+      } break;
       case AVGS:
         tuple_.add(aggre_avg_[i]);
         break;
@@ -367,19 +432,16 @@ void TupleAggregateUtil::aggregate(const char *record) {
       const FieldMeta * field_meta = table_meta.field(cur_aggreDesc->attr_name);
       assert(field_meta != nullptr);
       switch (field_meta->type()) {
-        case INTS: {
-          int value = *(int*)(record + field_meta->offset());
-          aggre_set_.update_aggre_set(i, (float)value);
-        } break;
-        case FLOATS: {
-          float value = *(float *)(record + field_meta->offset());
-          aggre_set_.update_aggre_set(i, value);
-        } break;
+        case INTS:
+        case FLOATS:
+        case CHARS: 
+          aggre_set_.update_aggre_set(i, field_meta->type(), field_meta->len(), (record + field_meta->offset()));
+          break;
         default:
           LOG_PANIC("can't aggregate date at present");
       }
     } else {
-      aggre_set_.update_aggre_set(i, aggres_[i]->value);
+      aggre_set_.update_aggre_set(i, AttrType::FLOATS, sizeof(float), (char *)(&(aggres_[i]->value)));
     }
   }
 }

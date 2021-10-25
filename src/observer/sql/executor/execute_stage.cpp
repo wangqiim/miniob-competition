@@ -309,7 +309,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     create_join_selection_executor(trx, selects, db, std::move(tuple_sets), join_exe_node);
     TupleSet tuple_set;
     join_exe_node.execute(tuple_set);
-    tuple_set.print(ss);
+    tuple_set.print(ss, true);
   } else {
     // 当前只查询一张表，直接返回结果即可
     tuple_sets.front().print(ss);
@@ -352,18 +352,22 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-  for (int i = selects.attr_num - 1; i >= 0; i--) {
-    const RelAttr &attr = selects.attributes[i];
-    if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
-      if (0 == strcmp("*", attr.attribute_name) || selects.relation_num > 1) { // 多表查询时，需要先将所有字段都查询出来，在后续做筛选
-        // 列出这张表所有字段
-        TupleSchema::from_table(table, schema);
-        break; // 没有校验，给出* 之后，再写字段的错误
-      } else {
-        // 列出这张表相关字段
-        RC rc = schema_add_field(table, attr.attribute_name, schema);
-        if (rc != RC::SUCCESS) {
-          return rc;
+  if (selects.relation_num > 1) { // todo(yqs): 多表查询时，先将所有字段都查询出来，在后续做筛选，其实可以按查询条件先筛选，未必需要全部先查出来
+    TupleSchema::from_table(table, schema);
+  } else {
+    for (int i = selects.attr_num - 1; i >= 0; i--) {
+      const RelAttr &attr = selects.attributes[i];
+      if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
+        if (0 == strcmp("*", attr.attribute_name)) {
+          // 列出这张表所有字段
+          TupleSchema::from_table(table, schema);
+          break; // 没有校验，给出* 之后，再写字段的错误
+        } else {
+          // 列出这张表相关字段
+          RC rc = schema_add_field(table, attr.attribute_name, schema);
+          if (rc != RC::SUCCESS) {
+            return rc;
+          }
         }
       }
     }

@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <string>
 #include <sstream>
 #include <map>
+#include <unordered_set>
 
 #include "execute_stage.h"
 
@@ -108,6 +109,33 @@ void ExecuteStage::callback_event(StageEvent *event, CallbackContext *context) {
   return;
 }
 
+RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
+  switch (sql->flag) {
+    case SCF_SELECT: {
+      Selects selects = sql->sstr.selection;
+      std::unordered_set<std::string> from_relation;
+      for (int i = 0; i < selects.relation_num; ++i) {
+        from_relation.insert(selects.relations[i]);
+      }
+      for (int i = 0; i < selects.attr_num; ++i) {
+        if (nullptr != selects.attributes[i].relation_name &&
+            from_relation.count(selects.attributes[i].relation_name) == 0) {
+          return RC::SCHEMA_FIELD_NOT_EXIST;
+        }
+      }
+      Condition condition;
+      for (int i = 0; i < selects.condition_num; ++i) {
+        condition = selects.conditions[i];
+        if ((condition.left_is_attr && from_relation.count(condition.left_attr.relation_name) == 0)
+        || (condition.right_is_attr && from_relation.count(condition.right_attr.relation_name) == 0)) {
+          return RC::SCHEMA_FIELD_NOT_EXIST;
+        }
+      }
+    }
+  }
+  return RC::SUCCESS;
+}
+
 void ExecuteStage::handle_request(common::StageEvent *event) {
   RC rc;
   ExecutionPlanEvent *exe_event = static_cast<ExecutionPlanEvent *>(event);
@@ -125,6 +153,13 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
 
   // 不考虑并发，每个query都要初始化一次DateUtil中buf的指针，放这里应该没问题
   theGlobalDateUtil()->Reset();
+
+  rc = pre_check(current_db, sql, exe_event->sql_event()->session_event());
+  if (rc != RC::SUCCESS) {
+    session_event->set_response("FAILURE\n");
+    exe_event->done_immediate();
+    return;
+  }
 
   switch (sql->flag) {
     case SCF_SELECT: { // select
@@ -331,9 +366,6 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
           return rc;
         }
       }
-    }
-    if (attr.relation_name != nullptr && 0 != strcmp(table_name, attr.relation_name)) {
-      return RC::SCHEMA_FIELD_MISSING;
     }
   }
 

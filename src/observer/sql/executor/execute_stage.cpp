@@ -379,19 +379,28 @@ RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *
   }
   // 构造多表查询返回schema
   TupleSchema schema;
-  for (int i = selects.attr_num - 1; i >= 0; i--) {
-    const RelAttr &attr = selects.attributes[i];
-    // todo(yqs): 前置校验项，对于多表查询，必须指定relation_name
-    assert(nullptr != attr.relation_name);
-    auto find_table = table_map->find(std::string(attr.relation_name));
-    // todo(yqs): 前置校验项，relation_name必须存在，且必须存在于selects.relations
-    assert(find_table != table_map->end());
-    if (0 == strcmp("*", attr.attribute_name)) {
+  if (selects.attr_num == 1 // select * from t1, t2
+      && nullptr == selects.attributes[0].relation_name
+      && strcmp("*", selects.attributes[0].attribute_name) == 0 ) {
+    for (int i = 0; i < selects.relation_num; ++i) {
+      auto find_table = table_map->find(selects.relations[i]);
       TupleSchema::from_table(find_table->second, schema);
-    } else {
-      RC rc = schema_add_field(find_table->second, attr.attribute_name, schema);
-      if (rc != RC::SUCCESS) {
-        return rc;
+    }
+  } else {
+    for (int i = selects.attr_num - 1; i >= 0; i--) {
+      const RelAttr &attr = selects.attributes[i];
+      // todo(yqs): 前置校验项，对于多表查询，必须指定relation_name
+      assert(nullptr != attr.relation_name);
+      auto find_table = table_map->find(attr.relation_name);
+      // todo(yqs): 前置校验项，relation_name必须存在，且必须存在于selects.relations
+      assert(find_table != table_map->end());
+      if (0 == strcmp("*", attr.attribute_name)) {
+        TupleSchema::from_table(find_table->second, schema);
+      } else {
+        RC rc = schema_add_field(find_table->second, attr.attribute_name, schema);
+        if (rc != RC::SUCCESS) {
+          return rc;
+        }
       }
     }
   }

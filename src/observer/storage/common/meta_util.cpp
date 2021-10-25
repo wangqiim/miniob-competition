@@ -38,9 +38,9 @@ bool DateUtil::check_dateRange(int y, int m, int d) {
 	return isvalid;
 }
 
-RC DateUtil::Check_and_format_date(void **data) {
+RC DateUtil::Check_and_format_date(void *data) {
 	// 1. check date valid
-	char *datas = reinterpret_cast<char *>(*data);
+	char *datas = reinterpret_cast<char *>(data);
 	if (!std::regex_match(datas, std::regex("^[0-9]{0,4}-[0-9]{1,2}-[0-9]{1,2}$"))) {
 		return RC::SCHEMA_FIELD_TYPE_MISMATCH;
 	}
@@ -67,13 +67,12 @@ RC DateUtil::Check_and_format_date(void **data) {
 		return RC::SCHEMA_FIELD_TYPE_MISMATCH;
 	}
 	// 2. date format
-	char *tp = alloc();
+	char *tp = reinterpret_cast<char *>(data);
 	sprintf(tp, "%04d", y);
 	sprintf(tp + 5, "%02d", m);
 	sprintf(tp + 8, "%02d", d);
 	tp[4] = tp[7] = '-';
 	tp[10] = tp[11] = '\0';
-	*data = tp;
 	return RC::SUCCESS;
 }
 
@@ -81,6 +80,6 @@ DateUtil *theGlobalDateUtil() {
 	static int UPBOUNDYEAR = 2038;
 	static int UPBOUNDMONTH = 3;
 	static int UPBOUNDDAY = 1;
-	static DateUtil *instance = new DateUtil(UPBOUNDYEAR, UPBOUNDMONTH, UPBOUNDDAY, DATESSIZE, 1000);
+	static DateUtil *instance = new DateUtil(UPBOUNDYEAR, UPBOUNDMONTH, UPBOUNDDAY);
 	return instance;
 }

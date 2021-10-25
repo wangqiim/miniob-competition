@@ -317,7 +317,7 @@ RC Table::make_record(int value_num, const Value *values, char * &record_out) {
       // 如果field类型是date需要接受字符串,然后再检验
       // 匹配日期为 [0000-1-1,2038-2-28]
       if (field->type() == DATES && value.type == CHARS) {
-        if (theGlobalDateUtil()->Check_and_format_date(&(((Value &)value).data)) == RC::SUCCESS) {
+        if (theGlobalDateUtil()->Check_and_format_date(((Value &)value).data) == RC::SUCCESS) {
           continue;
         }
       }
@@ -631,7 +631,7 @@ RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value
   }
   if (fieldMeta->type() != value->type) {
     if (fieldMeta->type() == DATES && value->type == CHARS &&
-        theGlobalDateUtil()->Check_and_format_date(&(((Value *)value)->data)) == RC::SUCCESS) {
+        theGlobalDateUtil()->Check_and_format_date(((Value *)value)->data) == RC::SUCCESS) {
         ((Value *)value)->type = DATES;
     } else {
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;

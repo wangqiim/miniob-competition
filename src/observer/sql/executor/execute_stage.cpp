@@ -117,17 +117,19 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
       for (int i = 0; i < selects.relation_num; ++i) {
         from_relation.insert(selects.relations[i]);
       }
+      // check from
       for (int i = 0; i < selects.attr_num; ++i) {
         if (nullptr != selects.attributes[i].relation_name &&
             from_relation.count(selects.attributes[i].relation_name) == 0) {
           return RC::SCHEMA_FIELD_NOT_EXIST;
         }
       }
+      // check where
       Condition condition;
       for (int i = 0; i < selects.condition_num; ++i) {
         condition = selects.conditions[i];
-        if ((condition.left_is_attr && from_relation.count(condition.left_attr.relation_name) == 0)
-        || (condition.right_is_attr && from_relation.count(condition.right_attr.relation_name) == 0)) {
+        if ((condition.left_is_attr && condition.left_attr.relation_name != nullptr && from_relation.count(condition.left_attr.relation_name) == 0)
+          || (condition.right_is_attr && condition.right_attr.relation_name != nullptr && from_relation.count(condition.right_attr.relation_name) == 0)) {
           return RC::SCHEMA_FIELD_NOT_EXIST;
         }
       }
@@ -150,9 +152,6 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
     return;
   }
   exe_event->push_callback(cb);
-
-  // 不考虑并发，每个query都要初始化一次DateUtil中buf的指针，放这里应该没问题
-  theGlobalDateUtil()->Reset();
 
   rc = pre_check(current_db, sql, exe_event->sql_event()->session_event());
   if (rc != RC::SUCCESS) {

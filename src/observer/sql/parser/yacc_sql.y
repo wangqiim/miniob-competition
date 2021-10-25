@@ -25,7 +25,12 @@ typedef struct ParserContext {
 //获取子串
 char *substr(const char *s,int n1,int n2)/*从s中提取下标为n1~n2的字符组成一个新字符串，然后返回这个新串的首地址*/
 {
-  char *sp = malloc(sizeof(char) * (n2 - n1 + 2));
+  // 提前分配一个超过12字节的内存空间用来存放整个日期"xxxx-xx-xx"
+  int len = sizeof(char) * (n2 - n1 + 2);
+  if (len < 12) {
+  	len = 12;
+  }
+  char *sp = malloc(len);
   int i, j = 0;
   for (i = n1; i <= n2; i++) {
     sp[j++] = s[i];

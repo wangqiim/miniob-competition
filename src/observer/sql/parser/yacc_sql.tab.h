@@ -106,65 +106,12 @@ extern int yydebug;
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
-/* Token kinds.  */
-#define YYEOF 0
-#define YYerror 256
-#define YYUNDEF 257
-#define SEMICOLON 258
-#define CREATE 259
-#define DROP 260
-#define TABLE 261
-#define TABLES 262
-#define INDEX 263
-#define SELECT 264
-#define DESC 265
-#define SHOW 266
-#define SYNC 267
-#define INSERT 268
-#define DELETE 269
-#define UPDATE 270
-#define LBRACE 271
-#define RBRACE 272
-#define COMMA 273
-#define TRX_BEGIN 274
-#define TRX_COMMIT 275
-#define TRX_ROLLBACK 276
-#define INT_T 277
-#define STRING_T 278
-#define FLOAT_T 279
-#define DATE_T 280
-#define HELP 281
-#define EXIT 282
-#define DOT 283
-#define INTO 284
-#define VALUES 285
-#define FROM 286
-#define WHERE 287
-#define AND 288
-#define SET 289
-#define ON 290
-#define LOAD 291
-#define DATA 292
-#define INFILE 293
-#define EQ 294
-#define LT 295
-#define GT 296
-#define LE 297
-#define GE 298
-#define NE 299
-#define NUMBER 300
-#define FLOAT 301
-#define ID 302
-#define PATH 303
-#define SSS 304
-#define STAR 305
-#define STRING_V 306
 
 /* Value type.  */
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 107 "yacc_sql.y"
+#line 112 "yacc_sql.y"
 
   struct _Attr *attr;
   struct _Condition *condition1;
@@ -174,7 +121,7 @@ union YYSTYPE
   float floats;
 	char *position;
 
-#line 178 "yacc_sql.tab.h"
+#line 125 "yacc_sql.tab.h"
 
 };
 typedef union YYSTYPE YYSTYPE;

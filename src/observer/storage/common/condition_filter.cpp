@@ -121,13 +121,13 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
   
   // 注意:如果到这里函数还没有返回，能继续执行，说明保证如果conditon中attr字段格式一定能和table_meta匹配
   if (!condition.left_is_attr && condition.right_is_attr && table_meta.field(condition.right_attr.attribute_name)->type() == DATES) {
-    if (!theGlobalDateUtil()->Check_and_format_date(&(left.value)) == RC::SUCCESS) {
+    if (!theGlobalDateUtil()->Check_and_format_date(left.value) == RC::SUCCESS) {
       LOG_WARN("date type filter condition schema mismatch.");
       return  RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
   }
   if (!condition.right_is_attr && condition.left_is_attr && table_meta.field(condition.left_attr.attribute_name)->type() == DATES) {
-    if (!theGlobalDateUtil()->Check_and_format_date(&(right.value)) == RC::SUCCESS) {
+    if (!theGlobalDateUtil()->Check_and_format_date(right.value) == RC::SUCCESS) {
       LOG_WARN("date type filter condition schema mismatch.");
       return  RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }

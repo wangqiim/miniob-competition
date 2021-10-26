@@ -164,7 +164,12 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
   case SCF_INSERT: { // insert into
       const Inserts &inserts = sql->sstr.insertion;
       const char *table_name = inserts.relation_name;
-      rc = handler_->insert_record(current_trx, current_db, table_name, inserts.value_num, inserts.values);
+      for (size_t i = 0; i < inserts.pair_num; i++) {
+        rc = handler_->insert_record(current_trx, current_db, table_name, inserts.pairs[i].value_num, inserts.pairs[i].values);
+        if (rc != RC::SUCCESS) {
+          break;
+        }
+      }
       snprintf(response, sizeof(response), "%s\n", rc == RC::SUCCESS ? "SUCCESS" : "FAILURE");
     }
     break;
@@ -259,6 +264,12 @@ void DefaultStorageStage::handle_event(StageEvent *event) {
     rc = current_trx->commit();
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to commit trx. rc=%d:%s", rc, strrc(rc));
+    }
+  }
+  if (rc != RC::SUCCESS && !session->is_trx_multi_operation_mode()) {
+    rc = current_trx->rollback();
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to rollback trx. rc=%d:%s", rc, strrc(rc));
     }
   }
 

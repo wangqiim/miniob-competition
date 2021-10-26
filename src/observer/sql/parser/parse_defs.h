@@ -85,11 +85,17 @@ typedef struct {
   Condition conditions[MAX_NUM];    // conditions in Where clause
 } Selects;
 
+typedef struct {
+  size_t value_num;       // Length of values
+  Value values[MAX_NUM];  // values to insert
+} InsertPairs;
+
+
 // struct of insert
 typedef struct {
   char *relation_name;    // Relation to insert into
-  size_t value_num;       // Length of values
-  Value values[MAX_NUM];  // values to insert
+  size_t pair_num;
+  InsertPairs pairs[MAX_NUM];
 } Inserts;
 
 // struct of delete
@@ -217,8 +223,9 @@ void selects_append_relation(Selects *selects, const char *relation_name);
 void selects_append_conditions(Selects *selects, Condition conditions[], size_t condition_num);
 void selects_destroy(Selects *selects);
 
-void inserts_init(Inserts *inserts, const char *relation_name, Value values[], size_t value_num);
+void inserts_init(Inserts *inserts, const char *relation_name);
 void inserts_destroy(Inserts *inserts);
+void inserts_append_values(Inserts *inserts, size_t pair_num, Value values[], size_t value_num);
 
 void deletes_init_relation(Deletes *deletes, const char *relation_name);
 void deletes_set_conditions(Deletes *deletes, Condition conditions[], size_t condition_num);

@@ -17,11 +17,13 @@ See the Mulan PSL v2 for more details. */
 
 #include <memory>
 #include <vector>
+#include <map>
 
 #include "sql/parser/parse.h"
 #include "sql/executor/value.h"
 
 class Table;
+class TupleSchema;
 
 class Tuple {
 public:
@@ -39,6 +41,7 @@ public:
   void add(int value);
   void add(float value);
   void add(const char *s, int len);
+  void add(const Tuple &tuple, const std::vector<int> &field_index);
   // add null
   void add_null();
 
@@ -98,20 +101,45 @@ public:
   void append(const TupleSchema &other);
 
   const std::vector<TupleField> &fields() const { return fields_; }
+  std::vector<int> index_in(TupleSchema &schema);
 
   bool empty() const { return fields_.size() == 0; }
 
   const TupleField &field(int index) const { return fields_[index]; }
+  const std::map<std::string, std::map<std::string, int>> &table_field_index() {
+    if (!table_field_index_.empty()) {
+      return table_field_index_;
+    }
+    const char *table_name;
+    const char *field_name;
+    for (int index = 0; index < fields_.size(); index++) {
+      TupleField &field = fields_[index];
+      table_name = field.table_name();
+      field_name = field.field_name();
+      auto find_table = table_field_index_.find(table_name);
+      if (find_table == table_field_index_.end()) {
+        std::map<std::string, int> field_index{{field_name, index}};
+        table_field_index_.emplace(table_name, field_index);
+      } else {
+        find_table->second[field_name] = index;
+      }
+    }
+    return table_field_index_;
+  }
 
   int index_of_field(const char *table_name, const char *field_name) const;
 
   void clear() { fields_.clear(); }
 
   void print(std::ostream &os, bool multi_table = false) const;
-public:
+
   static void from_table(const Table *table, TupleSchema &schema);
+  static void from_table(const std::vector<Table*> &tables, TupleSchema &schema);
+  static void schema_add_field(Table *table, const char *field_name, TupleSchema &schema);
+
 private:
   std::vector<TupleField> fields_;
+  std::map<std::string, std::map<std::string, int>> table_field_index_;
 };
 
 class TupleSet {
@@ -126,7 +154,7 @@ public:
 
   void set_schema(const TupleSchema &schema);
 
-  const TupleSchema &get_schema() const;
+  TupleSchema &get_schema();
 
   void add(Tuple && tuple);
 

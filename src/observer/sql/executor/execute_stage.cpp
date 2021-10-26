@@ -33,6 +33,8 @@ See the Mulan PSL v2 for more details. */
 #include "storage/default/default_handler.h"
 #include "storage/common/condition_filter.h"
 #include "storage/trx/trx.h"
+#include "executor.h"
+#include "executor_builder.h"
 
 using namespace common;
 
@@ -122,24 +124,40 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
     case SCF_SELECT: {
       // 1. check relation (from, select, where) valid
       Selects selects = sql->sstr.selection;
-      std::unordered_set<std::string> from_relation;
+      std::unordered_set<std::string> all_relation;
       for (int i = 0; i < selects.relation_num; ++i) {
         if (DefaultHandler::get_default().find_table(db, selects.relations[i]) == nullptr) {
           return RC::SCHEMA_TABLE_NOT_EXIST;
         }
-        from_relation.insert(selects.relations[i]);
+        all_relation.insert(selects.relations[i]);
+      }
+      for (int i = 0; i < selects.join_num; ++i) {
+        Join join = selects.joins[i];
+        if (DefaultHandler::get_default().find_table(db, join.table_name) == nullptr) {
+          return RC::SCHEMA_TABLE_NOT_EXIST;
+        }
+        all_relation.insert(join.table_name);
+        for (int j = 0; j < join.condition_num; ++j) {
+          Condition join_condition = join.conditions[j];
+          if (join_condition.left_is_attr && (join_condition.left_attr.relation_name==nullptr || all_relation.count(join_condition.left_attr.relation_name) == 0)) {
+            return RC::SCHEMA_TABLE_NOT_EXIST;
+          }
+          if (join_condition.right_is_attr && (join_condition.right_attr.relation_name==nullptr || all_relation.count(join_condition.right_attr.relation_name) == 0)) {
+            return RC::SCHEMA_TABLE_NOT_EXIST;
+          }
+        }
       }
       for (int i = 0; i < selects.attr_num; ++i) {
         if (nullptr != selects.attributes[i].relation_name &&
-            from_relation.count(selects.attributes[i].relation_name) == 0) {
+            all_relation.count(selects.attributes[i].relation_name) == 0) {
           return RC::SCHEMA_TABLE_NOT_EXIST;
         }
       }
       Condition condition;
       for (int i = 0; i < selects.condition_num; ++i) {
         condition = selects.conditions[i];
-        if ((condition.left_is_attr && condition.left_attr.relation_name != nullptr && from_relation.count(condition.left_attr.relation_name) == 0)
-          || (condition.right_is_attr && condition.right_attr.relation_name != nullptr && from_relation.count(condition.right_attr.relation_name) == 0)) {
+        if ((condition.left_is_attr && condition.left_attr.relation_name != nullptr && all_relation.count(condition.left_attr.relation_name) == 0)
+        || (condition.right_is_attr && condition.right_attr.relation_name != nullptr && all_relation.count(condition.right_attr.relation_name) == 0)) {
           return RC::SCHEMA_TABLE_NOT_EXIST;
         }
       }
@@ -147,20 +165,20 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
       // 2. check attr field (select, where) valid
       for (int i = 0; i < selects.attr_num; ++i) {
         if (selects.attributes[i].attribute_name == nullptr) {
-          return RC::SCHEMA_FIELD_NOT_EXIST; 
+          return RC::SCHEMA_FIELD_NOT_EXIST;
         }
         // 2.1 relation.attr
         if (nullptr != selects.attributes[i].relation_name) {
           if (strcmp("*", selects.attributes[i].attribute_name) != 0 &&
-            DefaultHandler::get_default().find_table(db, selects.attributes[i].relation_name)->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
+          DefaultHandler::get_default().find_table(db, selects.attributes[i].relation_name)->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
             return RC::SCHEMA_FIELD_NOT_EXIST;
           }
         } else {
           // 2.2 attr
           if (strcmp("*", selects.attributes[i].attribute_name) != 0) {
             // attr not exist in from table
-            if (selects.relation_num == 1 && 
-              DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
+            if (selects.relation_num == 1 &&
+            DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
               return RC::SCHEMA_FIELD_NOT_EXIST;
             }
             // not allow:  select id from t1 ,t2;
@@ -180,9 +198,9 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
             }
           } else {
             // left attr (attr must in from relation)
-            if (selects.relation_num == 1 && 
-              DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
-                return RC::SCHEMA_FIELD_NOT_EXIST;
+            if (selects.relation_num == 1 &&
+            DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
+              return RC::SCHEMA_FIELD_NOT_EXIST;
             }
             // not allow:  select XX.XX from t1 ,t2 from a op b; a and b must have relation_name
             if (selects.relation_num > 1) {
@@ -198,9 +216,9 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
             }
           } else {
             // right attr (attr must in from relation)
-            if (selects.relation_num == 1 && 
-              DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
-                return RC::SCHEMA_FIELD_NOT_EXIST;
+            if (selects.relation_num == 1 &&
+            DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
+              return RC::SCHEMA_FIELD_NOT_EXIST;
             }
             // not allow:  select XX.XX from t1 ,t2 from a op b; a and b must have relation_name
             if (selects.relation_num > 1) {
@@ -208,7 +226,7 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
             }
           }
         }
-      } // attr condition check 
+      } // attr condition check
     }
   }
   return RC::SUCCESS;
@@ -244,7 +262,11 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
       if (selects.aggre_num != 0) {
         rc = do_aggregate(current_db, sql, exe_event->sql_event()->session_event());
       } else {
-        rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
+        if (sql->sstr.selection.join_num > 0) {
+          rc = do_select_v2(current_db, sql, exe_event->sql_event()->session_event());
+        } else {
+          rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
+        }
       }
       
       if (rc != RC::SUCCESS) {
@@ -430,6 +452,36 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   for (SelectExeNode *& tmp_node: select_nodes) {
     delete tmp_node;
   }
+  session_event->set_response(ss.str());
+  end_trx_if_need(session, trx, true);
+  return rc;
+}
+
+
+RC ExecuteStage::do_select_v2(const char *db, Query *sql, SessionEvent *session_event) {
+  Session *session = session_event->get_client()->session;
+  Trx *trx = session->current_trx();
+  auto executor_builder = new ExecutorBuilder(db, sql, session_event);
+  Executor *executor = executor_builder->build();
+  assert(executor != nullptr);
+  TupleSet result;
+  RC rc = executor->init();
+  if (rc != RC::SUCCESS) {
+    delete executor_builder;
+    delete executor;
+    end_trx_if_need(session, trx, false);
+    return rc;
+  }
+  rc = executor->next(result);
+  if (rc != RC::SUCCESS) {
+    delete executor_builder;
+    delete executor;
+    end_trx_if_need(session, trx, false);
+    return rc;
+  }
+  std::stringstream ss;
+  bool multi_table = (sql->sstr.selection.relation_num > 1) || (sql->sstr.selection.join_num > 0);
+  result.print(ss, multi_table);
   session_event->set_response(ss.str());
   end_trx_if_need(session, trx, true);
   return rc;

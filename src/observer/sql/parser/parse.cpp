@@ -191,6 +191,21 @@ void selects_destroy(Selects *selects) {
   selects->order_num = 0;
 }
 
+void selects_append_joins(Selects *selects, Join joins[], size_t join_num) {
+  for (size_t i = 0; i < join_num; i++) {
+    selects->joins[selects->join_num++] = joins[i];
+  }
+}
+
+void join_init(Join *join, JoinType join_type, const char *relation_name, Condition conditions[], size_t condition_num) {
+  join->join_type = join_type;
+  for(size_t i = 0; i < condition_num; i++) {
+    join->conditions[i] = conditions[i];
+  }
+  join->condition_num = condition_num;
+  join->table_name = strdup(relation_name);
+}
+
 void inserts_init(Inserts *inserts, const char *relation_name) {
   inserts->relation_name = strdup(relation_name);
 }

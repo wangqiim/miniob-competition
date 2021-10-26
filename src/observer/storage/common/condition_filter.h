@@ -17,6 +17,8 @@ See the Mulan PSL v2 for more details. */
 
 #include <sql/executor/value.h>
 #include <sql/executor/tuple.h>
+#include <map>
+#include <utility>
 #include "rc.h"
 #include "sql/parser/parse.h"
 
@@ -150,5 +152,39 @@ private:
 };
 
 
+struct FilterDesc {
+  bool is_attr;
+  std::string table_name;
+  std::string field_name;
+  Value value;
+  // 为了适配支持现有的基于Record的过滤新增attr_length和attr_offset
+  int attr_length = -1;
+  int attr_offset = -1;
+};
+
+class Filter: public ConditionFilter {
+public:
+  Filter(FilterDesc left, FilterDesc right, CompOp comp_op): left_(std::move(left)), right_(std::move(right)), comp_op_(comp_op) {}
+  ~Filter() = default;
+
+  bool filter(const Tuple &left_tuple, TupleSchema &left_schema, const Tuple &right_tuple, TupleSchema &right_schema) const;
+
+  // 绑定单个Table，初始化left_和right_中的attr_length和attr_offset
+  // left_和right_中的table_name必须是相同的，否则当前filter不能作为对单个Table的Record进行过滤
+  RC bind_table(Table *table);
+
+  // 为了适配支持现有的基于Record的过滤，再调用支持Record之前，当前Filter必须先调用bind_table
+  // 此时当前的Filter只能够对单个Table中的字段进行过滤
+  bool filter(const Record &rec) const;
+
+  static void from_condition(Condition *conditions, size_t condition_num, std::vector<Filter*> &filters, bool &ban_all, bool attr_only=false);
+
+  static void from_condition_with_table(Condition *conditions, size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all);
+
+private:
+  FilterDesc  left_;
+  FilterDesc  right_;
+  CompOp   comp_op_ = NO_OP;
+};
 
 #endif // __OBSERVER_STORAGE_COMMON_CONDITION_FILTER_H_

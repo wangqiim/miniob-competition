@@ -18,6 +18,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/executor/util.h"
 #include "storage/common/table.h"
 #include "common/log/log.h"
+#include <vector>
+#include <map>
 #include "common/lang/bitmap.h"
 #include "storage/common/record_manager.h"
 
@@ -61,6 +63,13 @@ void Tuple::add_null() {
   add(new NullValue());
 }
 
+// 从tuple中筛选出符合tuple_schema的tuple_value添加到当前tuple
+void Tuple::add(const Tuple &tuple, const std::vector<int> &field_index) {
+  for (const auto index : field_index) {
+    add(tuple.get_pointer(index));
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 std::string TupleField::to_string() const {
@@ -82,6 +91,20 @@ void TupleSchema::from_table(const Table *table, TupleSchema &schema) {
 
 void TupleSchema::add(AttrType type, const char *table_name, const char *field_name, int order) {
   fields_.emplace_back(type, table_name, field_name, order);
+void TupleSchema::from_table(const std::vector<Table*>& tables, TupleSchema &schema) {
+  for (const auto &t : tables) {
+    from_table(t, schema);
+  }
+}
+
+void TupleSchema::schema_add_field(Table *table, const char *field_name, TupleSchema &schema) {
+  const FieldMeta *field_meta = table->table_meta().field(field_name);
+  assert(nullptr != field_meta);
+  schema.add_if_not_exists(field_meta->type(), table->name(), field_meta->name());
+}
+
+void TupleSchema::add(AttrType type, const char *table_name, const char *field_name) {
+  fields_.emplace_back(type, table_name, field_name);
 }
 
 void TupleSchema::add_if_not_exists(AttrType type, const char *table_name, const char *field_name, int order) {
@@ -100,6 +123,21 @@ void TupleSchema::append(const TupleSchema &other) {
   for (const auto &field: other.fields_) {
     fields_.emplace_back(field);
   }
+}
+
+std::vector<int> TupleSchema::index_in(TupleSchema &schema) {
+  std::vector<int> tuple_index;
+  std::map<std::string, std::map<std::string, int>> table_field_index = schema.table_field_index();
+  for (const auto & field : fields_) {
+    auto left_find_table = table_field_index.find(field.table_name());
+    if (left_find_table != table_field_index.end()) {
+      auto find_field = left_find_table->second.find(field.field_name());
+      if (find_field != left_find_table->second.end()) {
+        tuple_index.push_back(find_field->second);
+      }
+    }
+  }
+  return tuple_index;
 }
 
 int TupleSchema::index_of_field(const char *table_name, const char *field_name) const {
@@ -185,7 +223,7 @@ void TupleSet::set_schema(const TupleSchema &schema) {
   schema_ = schema;
 }
 
-const TupleSchema &TupleSet::get_schema() const {
+TupleSchema &TupleSet::get_schema() {
   return schema_;
 }
 

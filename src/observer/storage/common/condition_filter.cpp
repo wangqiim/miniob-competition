@@ -18,6 +18,8 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "storage/common/table.h"
 #include "common/lang/bitmap.h"
+#include <vector>
+#include <map>
 
 using namespace common;
 
@@ -91,7 +93,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
       left.is_null = false;
       left.value = condition.left_value.data;  // 校验type 或者转换类型
       type_left = condition.left_value.type;
-      if (condition.right_is_attr && table_meta.field(condition.right_attr.attribute_name) != nullptr && 
+      if (condition.right_is_attr && table_meta.field(condition.right_attr.attribute_name) != nullptr &&
           table_meta.field(condition.right_attr.attribute_name)->type() == DATES &&
           type_left == CHARS) {
         type_left = DATES;
@@ -122,7 +124,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
       right.is_null = false;
       right.value = condition.right_value.data;
       type_right = condition.right_value.type;
-      if (condition.left_is_attr && table_meta.field(condition.left_attr.attribute_name) != nullptr && 
+      if (condition.left_is_attr && table_meta.field(condition.left_attr.attribute_name) != nullptr &&
           table_meta.field(condition.left_attr.attribute_name)->type() == DATES &&
           type_right == CHARS) {
         type_right = DATES;
@@ -156,7 +158,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
   if (!left.is_null && !right.is_null && type_left != type_right) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
-  
+
   if ((condition.comp == CompOp::IS || condition.comp == CompOp::IS_NOT) && !right.is_null) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
@@ -365,4 +367,259 @@ bool CompositeCartesianFilter::filter(const Tuple &tuple) const {
     }
   }
   return true;
+}
+
+TupleValue *construct_from_value(const Value &value) {
+  TupleValue *result;
+  switch (value.type) {
+    case CHARS: {
+      result = new StringValue((const char *)value.data);
+    } break;
+    case FLOATS: {
+      result = new FloatValue(*((float*)value.data));
+    } break;
+    case INTS: {
+      result = new IntValue(*((int*)value.data));
+    } break;
+    case DATES: {
+      result = new StringValue((const char *)value.data);
+    } break;
+    default:
+      return nullptr;
+  }
+  return result;
+}
+
+TupleValue *construct_desc_value(const FilterDesc &filter, const Tuple &left_tuple, TupleSchema &left_schema, const Tuple &right_tuple, TupleSchema &right_schema) {
+  const std::map<std::string, std::map<std::string, int>> &left_field_index = left_schema.table_field_index();
+  const std::map<std::string, std::map<std::string, int>> &right_field_index = right_schema.table_field_index();
+  TupleValue *value = nullptr;
+  if (filter.is_attr) {
+    auto find_left_table = left_field_index.find(filter.table_name);
+    if (find_left_table != left_field_index.end()) {
+      auto find_left_field = find_left_table->second.find(filter.field_name);
+      if (find_left_field == find_left_table->second.end()) {
+        return nullptr;
+      }
+      int left_index = find_left_field->second;
+      value = left_tuple.get_pointer(left_index).get();
+    } else {
+      auto find_right_table = right_field_index.find(filter.table_name);
+      if (find_right_table == right_field_index.end()) {
+        return nullptr;
+      }
+      auto find_right_field = find_right_table->second.find(filter.field_name);
+      if (find_right_field == find_right_table->second.end()) {
+        return nullptr;
+      }
+      int right_index = find_right_field->second;
+      value = right_tuple.get_pointer(right_index).get();
+    }
+  } else {
+    value = construct_from_value(filter.value);
+  }
+  return value;
+}
+
+bool Filter::filter(const Tuple &left_tuple, TupleSchema &left_schema, const Tuple &right_tuple, TupleSchema &right_schema) const {
+  TupleValue *left_value = construct_desc_value(left_, left_tuple, left_schema, right_tuple, right_schema);
+  if (left_value == nullptr) {
+    return false;
+  }
+  TupleValue *right_value = construct_desc_value(right_, left_tuple, left_schema, right_tuple, right_schema);
+  if (right_value == nullptr) {
+    return false;
+  }
+  int cmp_result = left_value->compare(*right_value);
+  return compare_result(cmp_result, comp_op_);
+}
+
+RC Filter::bind_table(Table *table) {
+  const TableMeta &table_meta = table->table_meta();
+
+  if (left_.is_attr) {
+    const FieldMeta *field_left = table_meta.field(left_.field_name.c_str());
+    if (nullptr == field_left) {
+      LOG_WARN("No such field in condition. %s.%s", table->name(), left_.field_name.c_str());
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+    left_.attr_length = field_left->len();
+    left_.attr_offset = field_left->offset();
+    Value value;
+    value.type = field_left->type();
+    left_.value = value;
+  }
+
+  if (right_.is_attr) {
+    const FieldMeta *field_right = table_meta.field(right_.field_name.c_str());
+    if (nullptr == field_right) {
+      LOG_WARN("No such field in condition. %s.%s", table->name(), right_.field_name.c_str());
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+    right_.attr_length = field_right->len();
+    right_.attr_offset = field_right->offset();
+    Value value;
+    value.type = field_right->type();
+
+    right_.value = value;
+  }
+
+  // 注意:如果到这里函数还没有返回，能继续执行，说明保证如果conditon中attr字段格式一定能和table_meta匹配
+  if ((left_.value.type == DATES && theGlobalDateUtil()->Check_and_format_date(left_.value.data) != RC::SUCCESS) ||
+      (right_.value.type == DATES && theGlobalDateUtil()->Check_and_format_date(left_.value.data) != RC::SUCCESS)) {
+    LOG_WARN("date type filter condition schema mismatch.");
+    return  RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
+  if (left_.value.type != right_.value.type) {
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
+  return RC::SUCCESS;
+}
+
+bool Filter::filter(const Record &rec) const {
+  char *left_value = nullptr;
+  char *right_value = nullptr;
+
+  if (left_.is_attr) {  // value
+    left_value = (char *)(rec.data + left_.attr_offset);
+  } else {
+    left_value = (char *)left_.value.data;
+  }
+
+  if (right_.is_attr) {
+    right_value = (char *)(rec.data + right_.attr_offset);
+  } else {
+    right_value = (char *)right_.value.data;
+  }
+
+  int cmp_result = 0;
+  assert(left_.value.type == right_.value.type);
+  switch (left_.value.type) {
+    case CHARS: {  // 字符串都是定长的，直接比较
+      // 按照C字符串风格来定
+      cmp_result = strcmp(left_value, right_value);
+    } break;
+    case INTS: {
+      // 没有考虑大小端问题
+      // 对int和float，要考虑字节对齐问题,有些平台下直接转换可能会跪
+      int left = *(int *)left_value;
+      int right = *(int *)right_value;
+      cmp_result = left - right;
+    } break;
+    case FLOATS: {
+      float left = *(float *)left_value;
+      float right = *(float *)right_value;
+      cmp_result = (int)(left - right);
+    } break;
+    case DATES: {  // 字符串日期已经被格式化了，可以直接比较
+      // 按照C字符串风格来定
+      cmp_result = strcmp(left_value, right_value);
+    } break;
+    default: {
+    }
+  }
+  return compare_result(cmp_result, comp_op_);
+}
+
+void  Filter::from_condition(Condition *conditions, size_t condition_num, std::vector<Filter*> &filters, bool &ban_all, bool attr_only) {
+  ban_all = false;
+  for (int i = 0; i < condition_num; ++i) {
+    Condition condition = conditions[i];
+    FilterDesc left_filter_desc;
+    left_filter_desc.is_attr = (condition.left_is_attr == 1);
+    FilterDesc right_filter_desc;
+    right_filter_desc.is_attr = (condition.right_is_attr == 1);
+
+    if (!left_filter_desc.is_attr && !right_filter_desc.is_attr) {
+      left_filter_desc.value = condition.left_value;
+      right_filter_desc.value = condition.right_value;
+      TupleValue *left_value = construct_from_value(condition.left_value);
+      TupleValue *right_value = construct_from_value(condition.right_value);
+      int cmp_result = left_value->compare(*right_value);
+      if (compare_result(cmp_result, condition.comp)) {
+        continue;
+      } else {
+        filters.clear();
+        ban_all = true;
+        break;
+      }
+    }
+
+    if (left_filter_desc.is_attr) {
+      left_filter_desc.table_name = condition.left_attr.relation_name;
+      left_filter_desc.field_name = condition.left_attr.attribute_name;
+    } else {
+      if (attr_only) {
+        continue;
+      } else {
+        left_filter_desc.value = condition.left_value;
+      }
+    }
+    if (right_filter_desc.is_attr) {
+      right_filter_desc.table_name = condition.right_attr.relation_name;
+      right_filter_desc.field_name = condition.right_attr.attribute_name;
+    } else {
+      if (attr_only) {
+        continue;
+      } else {
+        right_filter_desc.value = condition.right_value;
+      }
+    }
+    auto *filter = new Filter(left_filter_desc, right_filter_desc, condition.comp);
+    filters.push_back(filter);
+  }
+}
+
+/**
+ * 只构建与table相关的filter, 仅包含情况：table.field op value ||  value op table.field
+ * @param conditions
+ * @param condition_num
+ * @param table
+ * @param filters
+ */
+void  Filter::from_condition_with_table(Condition conditions[], size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all) {
+  ban_all = false;
+  for (size_t i = 0; i < condition_num; ++i) {
+    const Condition &condition = conditions[i];
+    FilterDesc left_filter_desc;
+    left_filter_desc.is_attr = (condition.left_is_attr == 1);
+    FilterDesc right_filter_desc;
+    right_filter_desc.is_attr = (condition.right_is_attr == 1);
+
+    if (!left_filter_desc.is_attr && !right_filter_desc.is_attr) {
+      left_filter_desc.value = condition.left_value;
+      right_filter_desc.value = condition.right_value;
+      TupleValue *left_value = construct_from_value(condition.left_value);
+      TupleValue *right_value = construct_from_value(condition.left_value);
+      int cmp_result = left_value->compare(*right_value);
+      if (compare_result(cmp_result, condition.comp)) {
+        continue;
+      } else {
+        filters.clear();
+        ban_all = true;
+        break;
+      }
+    }
+
+    if (left_filter_desc.is_attr) {
+      if (condition.left_attr.relation_name != nullptr && strcmp(condition.left_attr.relation_name, table->name()) != 0) {
+          continue;
+      }
+      left_filter_desc.table_name = table->name();
+      left_filter_desc.field_name = condition.left_attr.attribute_name;
+    } else {
+      left_filter_desc.value = condition.left_value;
+    }
+    if (right_filter_desc.is_attr) {
+      if (condition.right_attr.relation_name && strcmp(condition.right_attr.relation_name, table->name()) != 0) {
+        continue;
+      }
+      right_filter_desc.table_name = table->name();
+      right_filter_desc.field_name = condition.right_attr.attribute_name;
+    } else {
+      right_filter_desc.value = condition.right_value;
+    }
+    auto *filter = new Filter(left_filter_desc, right_filter_desc, condition.comp);
+    filters.push_back(filter);
+  }
 }

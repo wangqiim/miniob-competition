@@ -20,7 +20,6 @@ See the Mulan PSL v2 for more details. */
 #include <string>
 #include <ostream>
 #include <assert.h>
-
 #include "sql/parser/parse_defs.h"
 
 class TupleValue {

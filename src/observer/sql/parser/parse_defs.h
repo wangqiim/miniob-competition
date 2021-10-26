@@ -49,6 +49,9 @@ typedef enum { UNDEFINED, CHARS, INTS, DATES, FLOATS } AttrType;
 //聚合函数
 typedef enum { UNDEFINEDAGG, MAXS, MINS, AVGS, SUMS, COUNTS } AggreType;
 
+//Join类型
+typedef enum { INNER_JOIN, OUTER_JOIN, LEFT_JOIN, RIGHT_JOIN } JoinType;
+
 //属性值
 typedef struct _Value {
   AttrType type;  // type of value
@@ -83,12 +86,32 @@ typedef struct _OrderBy {
 
 // struct of select
 typedef struct {
+  JoinType join_type;
+  char *table_name;
+  size_t condition_num;
+  Condition conditions[MAX_NUM];
+} Join;
+
+//struct Selects_;
+
+//typedef struct {
+//  RelAttr left_attr;
+//  CompOp comp;
+//  struct Selects_ *select;
+//} SubQuery;
+
+// struct of select
+typedef struct Selects_ {
   size_t    aggre_num;              // Length(num) of aggre func in Select clause
   Aggregate aggregates[MAX_NUM];    // Length(num) of aggre func in Select clause
   size_t    attr_num;               // Length of attrs in Select clause
   RelAttr   attributes[MAX_NUM];    // attrs in Select clause
   size_t    relation_num;           // Length of relations in Fro clause
   char *    relations[MAX_NUM];     // relations in From clause
+  size_t    join_num;
+  Join      joins[MAX_NUM];
+//  size_t    sub_query_num;
+//  SubQuery  sub_queries[MAX_NUM];
   size_t    condition_num;          // Length of conditions in Where clause
   Condition conditions[MAX_NUM];    // conditions in Where clause
   size_t    order_num;
@@ -236,6 +259,8 @@ void selects_append_relation(Selects *selects, const char *relation_name);
 void selects_append_conditions(Selects *selects, Condition conditions[], size_t condition_num);
 void selects_append_order(Selects *selects, RelAttr *rel_attr, int order);
 void selects_destroy(Selects *selects);
+void selects_append_joins(Selects *selects, Join joins[], size_t join_num);
+void join_init(Join *join, JoinType join_type, const char *relation_name, Condition conditions[], size_t condition_num);
 
 void inserts_init(Inserts *inserts, const char *relation_name);
 void inserts_destroy(Inserts *inserts);

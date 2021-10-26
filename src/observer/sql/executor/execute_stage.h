@@ -41,6 +41,7 @@ protected:
 
   void handle_request(common::StageEvent *event);
   RC do_select(const char *db, Query *sql, SessionEvent *session_event);
+  RC do_select_v2(const char *db, Query *sql, SessionEvent *session_event);
   RC do_aggregate(const char *db, Query *sql, SessionEvent *session_event);
 protected:
 private:

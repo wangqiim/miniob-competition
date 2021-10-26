@@ -151,6 +151,9 @@ class TupleSetDescartesIterator {
 public:
   explicit TupleSetDescartesIterator(std::vector<TupleSet> *tuple_sets): tuple_sets_(tuple_sets) {
     for (const auto & tuple_set : *tuple_sets) {
+      if (tuple_set.size() == 0) {
+        end = true;
+      }
       sizes_.push_back(tuple_set.size());
       indexes_.push_back(0);
     }

@@ -114,25 +114,74 @@ void ExecuteStage::callback_event(StageEvent *event, CallbackContext *context) {
 RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
   switch (sql->flag) {
     case SCF_SELECT: {
+      // 1. check relation (from, select, where) valid
       Selects selects = sql->sstr.selection;
       std::unordered_set<std::string> from_relation;
       for (int i = 0; i < selects.relation_num; ++i) {
+        if (DefaultHandler::get_default().find_table(db, selects.relations[i]) == nullptr) {
+          return RC::SCHEMA_TABLE_NOT_EXIST;
+        }
         from_relation.insert(selects.relations[i]);
       }
-      // check from
       for (int i = 0; i < selects.attr_num; ++i) {
         if (nullptr != selects.attributes[i].relation_name &&
             from_relation.count(selects.attributes[i].relation_name) == 0) {
-          return RC::SCHEMA_FIELD_NOT_EXIST;
+          return RC::SCHEMA_TABLE_NOT_EXIST;
         }
       }
-      // check where
       Condition condition;
       for (int i = 0; i < selects.condition_num; ++i) {
         condition = selects.conditions[i];
         if ((condition.left_is_attr && condition.left_attr.relation_name != nullptr && from_relation.count(condition.left_attr.relation_name) == 0)
           || (condition.right_is_attr && condition.right_attr.relation_name != nullptr && from_relation.count(condition.right_attr.relation_name) == 0)) {
-          return RC::SCHEMA_FIELD_NOT_EXIST;
+          return RC::SCHEMA_TABLE_NOT_EXIST;
+        }
+      }
+
+      // 2. check attr field (select, where) valid
+      for (int i = 0; i < selects.attr_num; ++i) {
+        if (selects.attributes[i].attribute_name == nullptr) {
+          return RC::SCHEMA_FIELD_NOT_EXIST; 
+        }
+        // 2.1 relation.attr
+        if (nullptr != selects.attributes[i].relation_name) {
+          if (strcmp("*", selects.attributes[i].attribute_name) != 0 &&
+            DefaultHandler::get_default().find_table(db, selects.relations[i])->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
+            return RC::SCHEMA_FIELD_NOT_EXIST;
+          }
+        } else {
+          // 2.2 attr
+          if (strcmp("*", selects.attributes[i].attribute_name) != 0 && selects.relation_num != 0 &&
+            DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
+            return RC::SCHEMA_FIELD_NOT_EXIST;
+          }
+        }
+      }
+      for (int i = 0; i < selects.condition_num; ++i) {
+        condition = selects.conditions[i];
+        if (condition.left_is_attr == 1) {
+          // 2.3 condition: left relation.attr
+          if (condition.left_attr.relation_name != nullptr &&
+            DefaultHandler::get_default().find_table(db, selects.relations[i])->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
+              return RC::SCHEMA_FIELD_NOT_EXIST;
+          }
+          // 2.3 condition: left attr
+          if (condition.left_attr.relation_name == nullptr && selects.relation_num != 0 && 
+            DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
+              return RC::SCHEMA_FIELD_NOT_EXIST;
+          }
+        }
+        if (condition.right_is_attr == 1) {
+          // 2.3 condition: right relation.attr
+          if (condition.right_attr.relation_name != nullptr &&
+            DefaultHandler::get_default().find_table(db, selects.relations[i])->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
+              return RC::SCHEMA_FIELD_NOT_EXIST;
+          }
+          // 2.3 condition: right attr
+          if (condition.right_attr.relation_name == nullptr && selects.relation_num != 0 && 
+            DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
+              return RC::SCHEMA_FIELD_NOT_EXIST;
+          }
         }
       }
     }

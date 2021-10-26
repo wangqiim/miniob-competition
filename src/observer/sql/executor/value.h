@@ -59,10 +59,14 @@ public:
     char s[20] = {0};
     sprintf(s, "%.2f", value_);
     for (int i = 19; i >= 0; i--) {
-      if (!s[i] == 0 && s[i] != '0' && s[i] != '.') {
-        break;
+      if (s[i] == '0' || s[i] == 0) {
+        s[i] = 0;
+        continue;
       }
-      s[i] = 0;
+      if (s[i] == '.') {
+        s[i] = 0;
+      }
+      break;
     }
     os << s;
   }

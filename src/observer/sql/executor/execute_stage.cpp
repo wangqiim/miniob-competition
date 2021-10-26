@@ -427,7 +427,7 @@ RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *
   if (selects.attr_num == 1 // select * from t1, t2
     && nullptr == selects.attributes[0].relation_name
     && strcmp("*", selects.attributes[0].attribute_name) == 0 ) {
-    for (int i = 0; i < selects.relation_num; ++i) {
+    for (int i = selects.relation_num -1; i >= 0; --i) {
       auto find_table = table_map->find(selects.relations[i]);
       TupleSchema::from_table(find_table->second, schema);
     }

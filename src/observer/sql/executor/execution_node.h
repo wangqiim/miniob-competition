@@ -69,4 +69,23 @@ private:
   std::map<std::string, std::pair<int, std::map<std::string, int>>> table_value_index_;
 };
 
+// 拥有DefaultConditionFilter和AggreDesc的所有按，析构时需要释放内存
+class AggregateExeNode {
+public:
+  AggregateExeNode() = default;
+  ~AggregateExeNode();
+  RC init(Trx *trx, Table *table, std::vector<AggreDesc *> &&aggre_descs, std::vector<DefaultConditionFilter *> &&condition_filters);
+
+  /* tuple_set is not used here! */
+  RC execute(AggreSet &aggre_set);
+private:
+  Trx *trx_ = nullptr;
+  Table * table_;
+  
+  std::vector<AggreDesc *> aggres_;
+
+  std::vector<DefaultConditionFilter *> condition_filters_;
+};
+
+
 #endif //__OBSERVER_SQL_EXECUTOR_EXECUTION_NODE_H_

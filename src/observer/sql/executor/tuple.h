@@ -212,4 +212,71 @@ private:
   TupleSet &tuple_set_;
 };
 
+struct AggreDesc {
+  AggreType aggre_type;
+  int       is_attr;          // 是否属性，false 表示是值
+  char *    relation_name;    // 如果是属性，则记录表名(用来决定最输出是tb.attr或attr)
+  char *    attr_name;        // 如果是属性，则记录属性名
+  int       is_star;          // *时，is_attr = 0, 用于辅助print时的表头和输入一致
+  float     value;            // 如果是值类型，这里记录值的数据
+};
+
+// aggregate result set
+class AggreSet {
+public:
+  AggreSet() = default;
+  // 释放内存
+  ~AggreSet() {
+    for (int i = 0; i < aggres_->size(); i++) {
+      if (aggre_max_[i] != nullptr) {
+        delete aggre_max_[i];
+      }
+      if (aggre_min_[i] != nullptr) {
+        delete aggre_min_[i];
+      }
+    }
+  };
+
+  void init(std::vector<AggreDesc *> &aggres);
+  
+  // 根据每一个记录更新所有聚合函数的中间属性: sum, count等
+  void update_aggre_set(int aggre_index, AttrType attr_type, int len, const char *value);
+  
+  // 生成最后的输出tuple
+  RC finish_aggregate();
+  
+  void print(std::ostream &os) const;
+
+
+private:
+  void aggre_type_print(std::ostream &os, AggreType type) const; 
+  void aggre_attr_print(std::ostream &os, int aggre_index) const;
+
+  std::vector<AggreDesc *> *aggres_;
+  std::vector<AttrType> aggre_attr_type_;
+
+  std::vector<char *> aggre_max_;
+  std::vector<char *> aggre_min_;
+  std::vector<float> aggre_avg_;
+  std::vector<float> aggre_sum_;
+  std::vector<float> aggre_count_;
+
+  Tuple tuple_;
+};
+
+// table_scan callback工具类
+class TupleAggregateUtil {
+public:
+  TupleAggregateUtil(Table * table, std::vector<AggreDesc *> &aggres, AggreSet &aggre_set) :
+    table_(table), aggres_(aggres), aggre_set_(aggre_set) {
+      aggre_set_.init(aggres_);
+    }
+
+  void aggregate(const char *record);
+private:
+  Table * table_;
+  std::vector<AggreDesc *> &aggres_;
+  AggreSet &aggre_set_;
+};
+
 #endif //__OBSERVER_SQL_EXECUTOR_TUPLE_H_

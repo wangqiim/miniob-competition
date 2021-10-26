@@ -146,7 +146,7 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
         // 2.1 relation.attr
         if (nullptr != selects.attributes[i].relation_name) {
           if (strcmp("*", selects.attributes[i].attribute_name) != 0 &&
-            DefaultHandler::get_default().find_table(db, selects.relations[i])->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
+            DefaultHandler::get_default().find_table(db, selects.attributes[i].relation_name)->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
             return RC::SCHEMA_FIELD_NOT_EXIST;
           }
         } else {
@@ -162,7 +162,7 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
         if (condition.left_is_attr == 1) {
           // 2.3 condition: left relation.attr
           if (condition.left_attr.relation_name != nullptr &&
-            DefaultHandler::get_default().find_table(db, selects.relations[i])->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
+            DefaultHandler::get_default().find_table(db, condition.left_attr.relation_name)->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
               return RC::SCHEMA_FIELD_NOT_EXIST;
           }
           // 2.3 condition: left attr
@@ -174,7 +174,7 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
         if (condition.right_is_attr == 1) {
           // 2.3 condition: right relation.attr
           if (condition.right_attr.relation_name != nullptr &&
-            DefaultHandler::get_default().find_table(db, selects.relations[i])->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
+            DefaultHandler::get_default().find_table(db, condition.right_attr.relation_name)->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
               return RC::SCHEMA_FIELD_NOT_EXIST;
           }
           // 2.3 condition: right attr

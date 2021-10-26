@@ -151,39 +151,58 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
           }
         } else {
           // 2.2 attr
-          if (strcmp("*", selects.attributes[i].attribute_name) != 0 && selects.relation_num != 0 &&
-            DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
-            return RC::SCHEMA_FIELD_NOT_EXIST;
+          if (strcmp("*", selects.attributes[i].attribute_name) != 0) {
+            // attr not exist in from table
+            if (selects.relation_num == 1 && 
+              DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(selects.attributes[i].attribute_name) == nullptr) {
+              return RC::SCHEMA_FIELD_NOT_EXIST;
+            }
+            // not allow:  select id from t1 ,t2;
+            if (selects.relation_num > 1) {
+              return RC::SCHEMA_FIELD_NOT_EXIST;
+            }
           }
         }
       }
       for (int i = 0; i < selects.condition_num; ++i) {
         condition = selects.conditions[i];
         if (condition.left_is_attr == 1) {
-          // 2.3 condition: left relation.attr
-          if (condition.left_attr.relation_name != nullptr &&
-            DefaultHandler::get_default().find_table(db, condition.left_attr.relation_name)->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
+          // 2.3.1 condition left: relation.attr
+          if (condition.left_attr.relation_name != nullptr) {
+            if (DefaultHandler::get_default().find_table(db, condition.left_attr.relation_name)->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
               return RC::SCHEMA_FIELD_NOT_EXIST;
-          }
-          // 2.3 condition: left attr
-          if (condition.left_attr.relation_name == nullptr && selects.relation_num != 0 && 
-            DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
+            }
+          } else {
+            // left attr (attr must in from relation)
+            if (selects.relation_num == 1 && 
+              DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.left_attr.attribute_name) == nullptr) {
+                return RC::SCHEMA_FIELD_NOT_EXIST;
+            }
+            // not allow:  select XX.XX from t1 ,t2 from a op b; a and b must have relation_name
+            if (selects.relation_num > 1) {
               return RC::SCHEMA_FIELD_NOT_EXIST;
+            }
           }
         }
         if (condition.right_is_attr == 1) {
-          // 2.3 condition: right relation.attr
-          if (condition.right_attr.relation_name != nullptr &&
-            DefaultHandler::get_default().find_table(db, condition.right_attr.relation_name)->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
+          // 2.3.2 condition right: relation.attr
+          if (condition.right_attr.relation_name != nullptr) {
+            if (DefaultHandler::get_default().find_table(db, condition.right_attr.relation_name)->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
               return RC::SCHEMA_FIELD_NOT_EXIST;
-          }
-          // 2.3 condition: right attr
-          if (condition.right_attr.relation_name == nullptr && selects.relation_num != 0 && 
-            DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
+            }
+          } else {
+            // right attr (attr must in from relation)
+            if (selects.relation_num == 1 && 
+              DefaultHandler::get_default().find_table(db, selects.relations[0])->table_meta().field(condition.right_attr.attribute_name) == nullptr) {
+                return RC::SCHEMA_FIELD_NOT_EXIST;
+            }
+            // not allow:  select XX.XX from t1 ,t2 from a op b; a and b must have relation_name
+            if (selects.relation_num > 1) {
               return RC::SCHEMA_FIELD_NOT_EXIST;
+            }
           }
         }
-      }
+      } // attr condition check 
     }
   }
   return RC::SUCCESS;

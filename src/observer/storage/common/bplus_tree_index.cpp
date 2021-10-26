@@ -60,7 +60,20 @@ RC BplusTreeIndex::close() {
   return RC::SUCCESS;
 }
 
-RC BplusTreeIndex::insert_entry(const char *record, const RID *rid) {
+RC BplusTreeIndex::insert_entry(const char *record, const RID *rid) { 
+  // 当查不到时,返回RC::RECORD_INVALID_KEY
+  if (unique_ == 1) {
+    RC rc;
+    RID unused_rid;
+    IndexScanner *scanner = create_scanner(CompOp::EQUAL_TO, record + field_meta_.offset());
+    rc = scanner->next_entry(&unused_rid);
+    if (rc == RC::SUCCESS) {
+      // 说明有重复的key，返回失败
+      scanner->destroy();
+      return RC::RECORD_DUPLICATE_KEY;
+    }
+    scanner->destroy();
+  }
   return index_handler_.insert_entry(record + field_meta_.offset(), rid);
 }
 

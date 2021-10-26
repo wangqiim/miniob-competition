@@ -260,20 +260,31 @@ RC Table::insert_record(Trx *trx, Record *record) {
 
   rc = insert_entry_of_indexes(record->data, record->rid);
   if (rc != RC::SUCCESS) {
-    RC rc2 = delete_entry_of_indexes(record->data, record->rid, true);
-    if (rc2 != RC::SUCCESS) {
-      LOG_PANIC("Failed to rollback index data when insert index entries failed. table name=%s, rc=%d:%s",
-                name(), rc2, strrc(rc2));
+    if (rc == RC::RECORD_DUPLICATE_KEY) {
+      // unique index
+      RC rc2 = record_handler_->delete_record(&record->rid);
+      if (rc2 != RC::SUCCESS) {
+        LOG_PANIC("Failed to rollback record data when insert index entries failed. table name=%s, rc=%d:%s",
+                  name(), rc2, strrc(rc2));
+      }
+      return rc;
+    } else {
+      RC rc2 = delete_entry_of_indexes(record->data, record->rid, true);
+      if (rc2 != RC::SUCCESS) {
+        LOG_PANIC("Failed to rollback index data when insert index entries failed. table name=%s, rc=%d:%s",
+                  name(), rc2, strrc(rc2));
+      }
+      rc2 = record_handler_->delete_record(&record->rid);
+      if (rc2 != RC::SUCCESS) {
+        LOG_PANIC("Failed to rollback record data when insert index entries failed. table name=%s, rc=%d:%s",
+                  name(), rc2, strrc(rc2));
+      }
+      return rc;
     }
-    rc2 = record_handler_->delete_record(&record->rid);
-    if (rc2 != RC::SUCCESS) {
-      LOG_PANIC("Failed to rollback record data when insert index entries failed. table name=%s, rc=%d:%s",
-                name(), rc2, strrc(rc2));
-    }
-    return rc;
   }
   return rc;
 }
+
 RC Table::insert_record(Trx *trx, int value_num, const Value *values) {
   if (value_num <= 0 || nullptr == values ) {
     LOG_ERROR("Invalid argument. value num=%d, values=%p", value_num, values);
@@ -505,7 +516,7 @@ static RC insert_index_record_reader_adapter(Record *record, void *context) {
   return inserter.insert_index(record);
 }
 
-RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_name) {
+RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_name, int unique) {
   if (index_name == nullptr || common::is_blank(index_name) ||
       attribute_name == nullptr || common::is_blank(attribute_name)) {
     return RC::INVALID_ARGUMENT;
@@ -527,7 +538,7 @@ RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_n
   }
 
   // 创建索引相关数据
-  BplusTreeIndex *index = new BplusTreeIndex();
+  BplusTreeIndex *index = new BplusTreeIndex(unique);
   std::string index_file = index_data_file(base_dir_.c_str(), name(), index_name);
   rc = index->create(index_file.c_str(), new_index_meta, *field_meta);
   if (rc != RC::SUCCESS) {
@@ -541,8 +552,14 @@ RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_n
   rc = scan_record(trx, nullptr, -1, &index_inserter, insert_index_record_reader_adapter);
   if (rc != RC::SUCCESS) {
     // rollback
-    delete index;
     LOG_ERROR("Failed to insert index to all records. table=%s, rc=%d:%s", name(), rc, strrc(rc));
+    if (index->close() != RC::SUCCESS || theGlobalDiskBufferPool()->drop_file(index_file.c_str()) != RC::SUCCESS) {
+      LOG_ERROR("Failed to rollback(delete) bplus tree index. file name=%s", index_file.c_str());
+    } else {
+      // theGlobalDiskBufferPool()->drop_file(index_file.c_str());
+      LOG_ERROR("success drop index file:%s", index_file.c_str());
+    }
+    delete index;
     return rc;
   }
   indexes_.push_back(index);

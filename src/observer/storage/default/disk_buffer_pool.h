@@ -79,21 +79,21 @@ public:
 class BPManager {
 public:
   BPManager(int size = BP_BUFFER_SIZE) {
-    this->size = size;
-    frame = new Frame[size];
-    allocated = new bool[size];
+    this->size_ = size;
+    frames_ = new Frame[size];
+    allocated_ = new bool[size];
     for (int i = 0; i < size; i++) {
-      allocated[i] = false;
-      frame[i].pin_count = 0;
+      allocated_[i] = false;
+      frames_[i].pin_count = 0;
     }
   }
 
   ~BPManager() {
-    delete[] frame;
-    delete[] allocated;
-    size = 0;
-    frame = nullptr;
-    allocated = nullptr;
+    delete[] frames_;
+    delete[] allocated_;
+    size_ = 0;
+    frames_ = nullptr;
+    allocated_ = nullptr;
   }
 
   Frame *alloc() {
@@ -104,14 +104,14 @@ public:
     return nullptr; // TODO for test
   }
 
-  Frame *getFrame() { return frame; }
+  Frame *getFrame() { return frames_; }
 
-  bool *getAllocated() { return allocated; }
+  bool *getAllocated() { return allocated_; }
 
 public:
-  int size;
-  Frame * frame = nullptr;
-  bool *allocated = nullptr;
+  int    size_      = 0;
+  Frame *frames_    = nullptr;
+  bool  *allocated_ = nullptr;
 };
 
 class DiskBufferPool {

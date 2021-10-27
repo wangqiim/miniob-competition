@@ -23,18 +23,12 @@ See the Mulan PSL v2 for more details. */
 #include <time.h>
 
 #include <vector>
+#include <map>
+#include <list>
 
+#include "storage/config.h"
+#include "storage/default/lru_replacer.h"
 #include "rc.h"
-
-typedef int PageNum;
-
-//
-#define BP_INVALID_PAGE_NUM (-1)
-#define BP_PAGE_SIZE (1 << 12)
-#define BP_PAGE_DATA_SIZE (BP_PAGE_SIZE - sizeof(PageNum))
-#define BP_FILE_SUB_HDR_SIZE (sizeof(BPFileSubHeader))
-#define BP_BUFFER_SIZE 50
-#define MAX_OPEN_FILE 1024
 
 typedef struct {
   PageNum page_num;
@@ -79,43 +73,56 @@ public:
 class BPManager {
 public:
   BPManager(int size = BP_BUFFER_SIZE) {
-    this->size_ = size;
+    size_ = size;
     frames_ = new Frame[size];
-    allocated_ = new bool[size];
+    free_list_.clear();
+    page_table_.clear();
+    replacer_ = new LRUReplacer(static_cast<size_t>(size));
     for (int i = 0; i < size; i++) {
-      allocated_[i] = false;
       frames_[i].pin_count = 0;
+      free_list_.emplace_back(i);
     }
   }
 
   ~BPManager() {
     delete[] frames_;
-    delete[] allocated_;
+    delete   replacer_;
     size_ = 0;
     frames_ = nullptr;
-    allocated_ = nullptr;
   }
 
-  Frame *alloc() {
-    return nullptr; // TODO for test
-  }
+  // 此函数不传递FrameId, PageNum的原因是，因为victim掉的frame需要上层
+  // 根据dirty来刷盘如果这里直接修改pageNum和fd,上层将刷错位置
+  Frame *alloc();
 
-  Frame *get(int file_desc, PageNum page_num) {
-    return nullptr; // TODO for test
-  }
+  void deleteFrame(FileDesc fd, PageNum pn, FrameId frame_id);
 
-  Frame *getFrame() { return frames_; }
+  Frame *get(int file_desc, PageNum page_num);
 
-  bool *getAllocated() { return allocated_; }
+  Frame *GetFrames() { return frames_; }
+  FrameId GetFrameID(Frame *frame) { return frame - frames_; }
+  void AddPageTable(FileDesc fd, PageNum pn, FrameId frame_id);
+  void DeletePageTable(FileDesc fd, PageNum pn);
 
 public:
   int    size_      = 0;
   Frame *frames_    = nullptr;
-  bool  *allocated_ = nullptr;
+
+  std::unordered_map<FileDesc, std::unordered_map<PageNum, FrameId>> page_table_ = {};
+  std::list<FrameId> free_list_ = {};
+  Replacer *replacer_ = nullptr;
 };
 
 class DiskBufferPool {
 public:
+  DiskBufferPool() {
+    for (int i = 0; i < MAX_OPEN_FILE; i++) {
+      free_file_ids_.push_back(i);
+    }
+    open_file_.clear();
+    file_name_id_.clear();
+  }
+
   /**
   * 创建一个名称为指定文件名的分页文件
   * 1. syscall open创建一个文件fd
@@ -213,6 +220,9 @@ public:
   RC flush_all_pages(int file_id);
 
 protected:
+  /**
+   * 调用完allocate_block之后一定记得bpm.addPageTable()更新页表
+   */
   RC allocate_block(Frame **buf);
   RC dispose_block(Frame *buf);
 
@@ -234,7 +244,12 @@ protected:
 
 private:
   BPManager bp_manager_;
-  BPFileHandle *open_list_[MAX_OPEN_FILE] = {nullptr};
+  // BPFileHandle *open_list_[MAX_OPEN_FILE] = {nullptr};
+  std::list<int> free_file_ids_{};
+  // file_id->fileHandle
+  std::unordered_map<int, BPFileHandle *> open_file_{};
+  // file_name->file_id
+  std::unordered_map<std::string, int> file_name_id_{};
 };
 
 DiskBufferPool *theGlobalDiskBufferPool();

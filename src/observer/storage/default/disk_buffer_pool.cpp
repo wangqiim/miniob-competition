@@ -213,7 +213,7 @@ RC DiskBufferPool::close_file(int file_id)
   BPFileHandle *file_handle = open_file_[file_id];
   file_handle->hdr_frame->pin_count--;
   if ((tmp = force_all_pages(file_handle)) != RC::SUCCESS) {
-    file_handle->hdr_frame->pin_count++; // (wq)这里不在意去bpm里pin这个页了，因为此时系统已经不稳定
+    file_handle->hdr_frame->pin_count++;
     LOG_PANIC("Failed to closeFile %d:%s, due to failed to force all pages.", file_id, file_handle->file_name);
     return tmp;
   }
@@ -425,6 +425,7 @@ RC DiskBufferPool::force_page(BPFileHandle *file_handle, PageNum page_num)
 {
   if (page_num == -1) {
     Frame *frame;
+    std::vector<std::pair<int, int>> deleted_pages;
     for (auto &it : bp_manager_.page_table_[file_handle->file_desc]) {
       frame = &bp_manager_.frames_[it.second];
       if (frame->pin_count != 0) {
@@ -438,7 +439,12 @@ RC DiskBufferPool::force_page(BPFileHandle *file_handle, PageNum page_num)
           return rc;
         }
       }
-      bp_manager_.deleteFrame(file_handle->file_desc, page_num, bp_manager_.GetFrameID(frame));
+      deleted_pages.push_back({it.first, it.second});
+    }
+    
+    for (auto &it : deleted_pages) {
+      RC rc = flush_block(&bp_manager_.frames_[it.second]);
+      bp_manager_.deleteFrame(file_handle->file_desc, it.first, it.second);
     }
     return RC::SUCCESS;
   }
@@ -478,14 +484,19 @@ RC DiskBufferPool::flush_all_pages(int file_id)
 
 RC DiskBufferPool::force_all_pages(BPFileHandle *file_handle)
 {
+  std::vector<std::pair<int, int>> deleted_pages;
   for (auto &it : bp_manager_.page_table_[file_handle->file_desc]) {
     if (bp_manager_.frames_[it.second].dirty) {
+      deleted_pages.push_back({it.second, it.second});
       RC rc = flush_block(&bp_manager_.frames_[it.second]);
       if (rc != RC::SUCCESS) {
         LOG_ERROR("Failed to flush all pages' of %s.", file_handle->file_name);
         return rc;
       }
     }
+  }
+  for (auto &it : deleted_pages) {
+    RC rc = flush_block(&bp_manager_.frames_[it.second]);
     bp_manager_.deleteFrame(file_handle->file_desc, it.first, it.second);
   }
   return RC::SUCCESS;

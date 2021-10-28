@@ -444,7 +444,9 @@ RC DiskBufferPool::force_page(BPFileHandle *file_handle, PageNum page_num)
   }
   Frame *frame = bp_manager_.get(file_handle->file_desc, page_num);
   if (frame == nullptr) {
-    return RC::BUFFERPOOL_PAGE_PINNED;
+    // 对齐原版本，原版本：如果在located数组中找不到对应的已经分配的frame也返回success
+    // return RC::BUFFERPOOL_PAGE_PINNED;
+    return RC::SUCCESS;
   }
   if (frame->pin_count != 0) {
     LOG_ERROR("Page :%s:%d has been pinned.", file_handle->file_name, page_num);
@@ -470,6 +472,7 @@ RC DiskBufferPool::flush_all_pages(int file_id)
   }
 
   BPFileHandle *file_handle = open_file_[file_id];
+  // TODO(wq): 这里应该是flush所有的页?为什么是force所有的页??
   return force_all_pages(file_handle);
 }
 

@@ -27,6 +27,7 @@ See the Mulan PSL v2 for more details. */
 #include "storage/common/index.h"
 #include "storage/common/bplus_tree_index.h"
 #include "storage/trx/trx.h"
+#include "common/lang/bitmap.h"
 
 Table::Table() : 
     data_buffer_pool_(nullptr),
@@ -320,10 +321,19 @@ RC Table::make_record(int value_num, const Value *values, char * &record_out) {
     return RC::SCHEMA_FIELD_MISSING;
   }
 
+  // TODO(wq): 考虑把这段check逻辑单独提出来???
+  // 检查字段合法(包括类型匹配,null) 以及format日期
   const int normal_field_start_index = table_meta_.sys_field_num();
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
+    if (value.isnull) {
+      if (!field->nullable()) {
+        LOG_ERROR("Invalid null values. field name=%s is not null, but given null", field->name());
+        return RC::CONSTRAINT_NOTNULL;
+      }
+      continue;
+    }
     if (field->type() != value.type) {
       // 如果field类型是date需要接受字符串,然后再检验
       // 匹配日期为 [0000-1-1,2038-2-28]
@@ -350,11 +360,17 @@ RC Table::make_record(int value_num, const Value *values, char * &record_out) {
   // 复制所有字段的值
   int record_size = table_meta_.record_size();
   char *record = new char [record_size];
+  common::Bitmap null_bitmap(record, align8(table_meta_.field_num()));
 
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    memcpy(record + field->offset(), value.data, field->len());
+    if (value.isnull) {
+      null_bitmap.set_bit(i + normal_field_start_index);
+    } else {
+      null_bitmap.clear_bit(i + normal_field_start_index);
+      memcpy(record + field->offset(), value.data, field->len());
+    }
   }
 
   record_out = record;

@@ -19,6 +19,7 @@ See the Mulan PSL v2 for more details. */
 typedef int SlotNum;
 struct PageHeader;
 class ConditionFilter;
+int align8(int size);
 
 struct RID 
 {

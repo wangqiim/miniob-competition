@@ -62,30 +62,30 @@ void relation_aggre_destroy(Aggregate *aggregate) {
 
 void value_init_null(Value *value) {
   value->type = AttrType::UNDEFINED;
-  value->nullable = 1;
+  value->isnull = 1;
   value->data = NULL;
 }
 void value_init_integer(Value *value, int v) {
   value->type = INTS;
-  value->nullable = 0;
+  value->isnull = 0;
   value->data = malloc(sizeof(v));
   memcpy(value->data, &v, sizeof(v));
 }
 void value_init_float(Value *value, float v) {
   value->type = FLOATS;
-  value->nullable = 0;
+  value->isnull = 0;
   value->data = malloc(sizeof(v));
   memcpy(value->data, &v, sizeof(v));
 }
 void value_init_string(Value *value, const char *v) {
   value->type = CHARS;
-  value->nullable = 0;
+  value->isnull = 0;
   value->data = strdup(v);
 }
 void value_destroy(Value *value) {
   value->type = UNDEFINED;
   free(value->data);
-  value->nullable = 0;
+  value->isnull = 0;
   value->data = nullptr;
 }
 

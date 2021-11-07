@@ -50,7 +50,7 @@ typedef enum { UNDEFINEDAGG, MAXS, MINS, AVGS, SUMS, COUNTS } AggreType;
 //属性值
 typedef struct _Value {
   AttrType type;  // type of value
-  int nullable;
+  int isnull;
   void *data;     // value
 } Value;
 

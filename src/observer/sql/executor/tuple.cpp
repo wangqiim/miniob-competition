@@ -17,6 +17,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/executor/tuple.h"
 #include "storage/common/table.h"
 #include "common/log/log.h"
+#include "common/lang/bitmap.h"
+#include "storage/common/record_manager.h"
 
 Tuple::Tuple(const Tuple &other) = default;
 
@@ -53,6 +55,9 @@ void Tuple::add(float value) {
 
 void Tuple::add(const char *s, int len) {
   add(new StringValue(s, len));
+}
+void Tuple::add_null() {
+  add(new NullValue());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -208,9 +213,15 @@ void TupleRecordConverter::add_record(const char *record) {
   const TupleSchema &schema = tuple_set_.schema();
   Tuple tuple;
   const TableMeta &table_meta = table_->table_meta();
+  common::Bitmap null_bitmap((char *)record, align8(table_meta.field_num()));
   for (const TupleField &field : schema.fields()) {
     const FieldMeta *field_meta = table_meta.field(field.field_name());
     assert(field_meta != nullptr);
+    int index = table_meta.field_index(field.field_name());
+    if (null_bitmap.get_bit(index)) {
+      tuple.add_null();
+      continue;
+    }
     switch (field_meta->type()) {
       case INTS: {
         int value = *(int*)(record + field_meta->offset());

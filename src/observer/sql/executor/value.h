@@ -19,6 +19,7 @@ See the Mulan PSL v2 for more details. */
 
 #include <string>
 #include <ostream>
+#include <assert.h>
 
 class TupleValue {
 public:
@@ -103,6 +104,21 @@ public:
   }
 private:
   std::string value_;
+};
+
+class NullValue : public TupleValue {
+public:
+  NullValue() = default;
+
+  void to_string(std::ostream &os) const override {
+    os << "null";
+  }
+
+  int compare(const TupleValue &other) const override {
+    // TODO(wq): 哪里用到??
+    assert(false);
+    return -1;
+  }
 };
 
 

@@ -18,6 +18,7 @@ See the Mulan PSL v2 for more details. */
 #include "json/json.h"
 #include "common/log/log.h"
 #include "storage/trx/trx.h"
+#include "common/lang/bitmap.h"
 
 static const Json::StaticString FIELD_TABLE_NAME("table_name");
 static const Json::StaticString FIELD_FIELDS("fields");
@@ -42,7 +43,7 @@ void TableMeta::swap(TableMeta &other) noexcept{
 RC TableMeta::init_sys_fields() {
   sys_fields_.reserve(1);
   FieldMeta field_meta;
-  RC rc = field_meta.init(Trx::trx_field_name(), Trx::trx_field_type(), 0, Trx::trx_field_len(), false);
+  RC rc = field_meta.init(Trx::trx_field_name(), Trx::trx_field_type(), 0, Trx::trx_field_len(), false, 0);
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to init trx field. rc = %d:%s", rc, strrc(rc));
     return rc;
@@ -80,7 +81,7 @@ RC TableMeta::init(const char *name, int field_num, const AttrInfo attributes[])
 
   for (int i = 0; i < field_num; i++) {
     const AttrInfo &attr_info = attributes[i];
-    rc = fields_[i + sys_fields_.size()].init(attr_info.name, attr_info.type, field_offset, attr_info.length, true);
+    rc = fields_[i + sys_fields_.size()].init(attr_info.name, attr_info.type, field_offset, attr_info.length, true, attr_info.nullable == 1);
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to init field meta. table name=%s, field name: %s", name, attr_info.name);
       return rc;
@@ -89,7 +90,13 @@ RC TableMeta::init(const char *name, int field_num, const AttrInfo attributes[])
     field_offset += attr_info.length;
   }
 
-  record_size_ = field_offset;
+  // 将每个null_bitmap放在record头部,将每个字段的offset加上null_bitmap_size
+  int null_bitmap_len = align8(fields_.size()) / 8;
+  for (auto &field : fields_) {
+    field.set_offset(field.offset() + null_bitmap_len);
+  }
+
+  record_size_ = field_offset + null_bitmap_len;
 
   name_ = name;
   LOG_INFO("Init table meta success. table name=%s", name);
@@ -122,6 +129,18 @@ const FieldMeta * TableMeta::field(const char *name) const {
     }
   }
   return nullptr;
+}
+
+int TableMeta::field_index(const char *name) const {
+  if (nullptr == name) {
+    return -1;
+  }
+  for (int i = 0; i < field_num(); i++) {
+    if (0 == strcmp(fields_[i].name(), name)) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 const FieldMeta * TableMeta::find_field_by_offset(int offset) const {

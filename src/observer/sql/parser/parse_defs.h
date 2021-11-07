@@ -50,6 +50,7 @@ typedef enum { UNDEFINEDAGG, MAXS, MINS, AVGS, SUMS, COUNTS } AggreType;
 //属性值
 typedef struct _Value {
   AttrType type;  // type of value
+  int nullable;
   void *data;     // value
 } Value;
 
@@ -118,6 +119,7 @@ typedef struct {
   char *name;     // Attribute name
   AttrType type;  // Type of attribute
   size_t length;  // Length of attribute
+  int nullable;   // 1: nullable; 0: not null(default)
 } AttrInfo;
 
 // struct of craete_table
@@ -205,6 +207,7 @@ void relation_attr_destroy(RelAttr *relation_attr);
 void relation_aggre_init(Aggregate *aggregate, AggreType aggreType, int is_attr, const char *relation_name, const char *attribute_name, Value* value);
 void relation_aggre_destroy(Aggregate *aggregate);
 
+void value_init_null(Value *value);
 void value_init_integer(Value *value, int v);
 void value_init_float(Value *value, float v);
 void value_init_string(Value *value, const char *v);
@@ -214,7 +217,7 @@ void condition_init(Condition *condition, CompOp comp, int left_is_attr, RelAttr
     int right_is_attr, RelAttr *right_attr, Value *right_value);
 void condition_destroy(Condition *condition);
 
-void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length);
+void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length, int nullable);
 void attr_info_destroy(AttrInfo *attr_info);
 
 void selects_init(Selects *selects, ...);

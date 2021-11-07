@@ -60,23 +60,32 @@ void relation_aggre_destroy(Aggregate *aggregate) {
   aggregate->attr.attribute_name = nullptr;
 }
 
+void value_init_null(Value *value) {
+  value->type = AttrType::UNDEFINED;
+  value->nullable = 1;
+  value->data = NULL;
+}
 void value_init_integer(Value *value, int v) {
   value->type = INTS;
+  value->nullable = 0;
   value->data = malloc(sizeof(v));
   memcpy(value->data, &v, sizeof(v));
 }
 void value_init_float(Value *value, float v) {
   value->type = FLOATS;
+  value->nullable = 0;
   value->data = malloc(sizeof(v));
   memcpy(value->data, &v, sizeof(v));
 }
 void value_init_string(Value *value, const char *v) {
   value->type = CHARS;
+  value->nullable = 0;
   value->data = strdup(v);
 }
 void value_destroy(Value *value) {
   value->type = UNDEFINED;
   free(value->data);
+  value->nullable = 0;
   value->data = nullptr;
 }
 
@@ -111,7 +120,7 @@ void condition_destroy(Condition *condition) {
   }
 }
 
-void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length) {
+void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length, int nullable) {
   attr_info->name = strdup(name);
   attr_info->type = type;
   if (type == DATES) {
@@ -119,8 +128,9 @@ void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t
   } else {
     attr_info->length = length;  
   }
-  
+  attr_info->nullable = nullable;
 }
+
 void attr_info_destroy(AttrInfo *attr_info) {
   free(attr_info->name);
   attr_info->name = nullptr;

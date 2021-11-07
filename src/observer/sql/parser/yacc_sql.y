@@ -122,6 +122,7 @@ ParserContext *get_context(yyscan_t scanner)
 		NOT_T
 		NULL_T
 		NULLABLE_T
+		IS_T
 
 %union {
   struct _Attr *attr;
@@ -670,6 +671,8 @@ comOp:
     | LE { CONTEXT->comp = LESS_EQUAL; }
     | GE { CONTEXT->comp = GREAT_EQUAL; }
     | NE { CONTEXT->comp = NOT_EQUAL; }
+	| IS_T { CONTEXT->comp = IS; }
+	| IS_T NOT_T { CONTEXT->comp = IS_NOT; }
     ;
 
 load_data:

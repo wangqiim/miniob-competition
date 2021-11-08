@@ -119,6 +119,10 @@ ParserContext *get_context(yyscan_t scanner)
         LE
         GE
         NE
+		NOT_T
+		NULL_T
+		NULLABLE_T
+		IS_T
 
 %union {
   struct _Attr *attr;
@@ -263,7 +267,7 @@ attr_def:
     ID_get type LBRACE number RBRACE 
 		{
 			AttrInfo attribute;
-			attr_info_init(&attribute, CONTEXT->id, $2, $4);
+			attr_info_init(&attribute, CONTEXT->id, $2, $4, 0);
 			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name =(char*)malloc(sizeof(char));
 			// strcpy(CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name, CONTEXT->id); 
@@ -273,8 +277,9 @@ attr_def:
 		}
     |ID_get type
 		{
+			// default: not null
 			AttrInfo attribute;
-			attr_info_init(&attribute, CONTEXT->id, $2, 4); // TODO(wq): 第4个参数不应该写死是4吧,会导致字符串被截断
+			attr_info_init(&attribute, CONTEXT->id, $2, 4, 0); // TODO(wq): 第4个参数不应该写死是4吧,会导致字符串被截断
 			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name=(char*)malloc(sizeof(char));
 			// strcpy(CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].name, CONTEXT->id); 
@@ -282,7 +287,22 @@ attr_def:
 			// CONTEXT->ssql->sstr.create_table.attributes[CONTEXT->value_length].length=4; // default attribute length
 			CONTEXT->value_length++;
 		}
+    |ID_get type NOT_T NULL_T
+		{
+			AttrInfo attribute;
+			attr_info_init(&attribute, CONTEXT->id, $2, 4, 0);
+			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
+			CONTEXT->value_length++;
+		}
+    |ID_get type NULLABLE_T
+		{
+			AttrInfo attribute;
+			attr_info_init(&attribute, CONTEXT->id, $2, 4, 1);
+			create_table_append_attribute(&CONTEXT->ssql->sstr.create_table, &attribute);
+			CONTEXT->value_length++;
+		}
     ;
+
 number:
 		NUMBER {$$ = $1;}
 		;
@@ -347,6 +367,9 @@ value:
     |SSS {
 			$1 = substr($1,1,strlen($1)-2);
   		value_init_string(&CONTEXT->values[CONTEXT->value_length++], $1);
+		}
+	|NULL_T {
+		value_init_null(&CONTEXT->values[CONTEXT->value_length++]);
 		}
     ;
     
@@ -648,6 +671,8 @@ comOp:
     | LE { CONTEXT->comp = LESS_EQUAL; }
     | GE { CONTEXT->comp = GREAT_EQUAL; }
     | NE { CONTEXT->comp = NOT_EQUAL; }
+	| IS_T { CONTEXT->comp = IS; }
+	| IS_T NOT_T { CONTEXT->comp = IS_NOT; }
     ;
 
 load_data:

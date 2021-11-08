@@ -19,6 +19,9 @@ See the Mulan PSL v2 for more details. */
 
 #include <string>
 #include <ostream>
+#include <assert.h>
+
+#include "sql/parser/parse_defs.h"
 
 class TupleValue {
 public:
@@ -27,12 +30,17 @@ public:
 
   virtual void to_string(std::ostream &os) const = 0;
   virtual int compare(const TupleValue &other) const = 0;
+
+  AttrType Type() const { return type_;}
+  void SetType(AttrType type) { type_ = type; }
 private:
+  AttrType type_;
 };
 
 class IntValue : public TupleValue {
 public:
   explicit IntValue(int value) : value_(value) {
+    SetType(AttrType::INTS);
   }
 
   void to_string(std::ostream &os) const override {
@@ -51,6 +59,7 @@ private:
 class FloatValue : public TupleValue {
 public:
   explicit FloatValue(float value) : value_(value) {
+    SetType(AttrType::FLOATS);
   }
 
   // https://github.com/wangqiim/miniob/issues/2
@@ -89,6 +98,7 @@ private:
 class StringValue : public TupleValue {
 public:
   StringValue(const char *value, int len) : value_(value, len){
+    SetType(AttrType::CHARS);
   }
   explicit StringValue(const char *value) : value_(value) {
   }
@@ -103,6 +113,23 @@ public:
   }
 private:
   std::string value_;
+};
+
+class NullValue : public TupleValue {
+public:
+  NullValue() {
+    SetType(AttrType::UNDEFINED);
+  }
+
+  void to_string(std::ostream &os) const override {
+    os << "null";
+  }
+
+  int compare(const TupleValue &other) const override {
+    // TODO(wq): 哪里用到??
+    assert(false);
+    return -1;
+  }
 };
 
 

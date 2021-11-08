@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "record_manager.h"
 #include "common/log/log.h"
 #include "storage/common/table.h"
+#include "common/lang/bitmap.h"
 
 using namespace common;
 
@@ -38,9 +39,9 @@ DefaultConditionFilter::DefaultConditionFilter()
 DefaultConditionFilter::~DefaultConditionFilter()
 {}
 
-RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right, AttrType attr_type, CompOp comp_op)
+RC DefaultConditionFilter::init(Table *table, const ConDesc &left, const ConDesc &right, AttrType attr_type, CompOp comp_op)
 {
-  if (attr_type < CHARS || attr_type > FLOATS) {
+  if ((attr_type < CHARS || attr_type > FLOATS) && !left.is_null) {
     LOG_ERROR("Invalid condition with unsupported attribute type: %d", attr_type);
     return RC::INVALID_ARGUMENT;
   }
@@ -50,6 +51,7 @@ RC DefaultConditionFilter::init(const ConDesc &left, const ConDesc &right, AttrT
     return RC::INVALID_ARGUMENT;
   }
 
+  table_ = table;
   left_ = left;
   right_ = right;
   attr_type_ = attr_type;
@@ -74,6 +76,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
       LOG_WARN("No such field in condition. %s.%s", table.name(), condition.left_attr.attribute_name);
       return RC::SCHEMA_FIELD_MISSING;
     }
+    left.attr_index = table_meta.field_index(condition.left_attr.attribute_name);
     left.attr_length = field_left->len();
     left.attr_offset = field_left->offset();
 
@@ -82,14 +85,18 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
     type_left = field_left->type();
   } else {
     left.is_attr = false;
-    left.value = condition.left_value.data;  // 校验type 或者转换类型
-    type_left = condition.left_value.type;
-    if (condition.right_is_attr && table_meta.field(condition.right_attr.attribute_name) != nullptr && 
-        table_meta.field(condition.right_attr.attribute_name)->type() == DATES &&
-        type_left == CHARS) {
-      type_left = DATES;
+    if (condition.left_value.isnull) {
+      left.is_null = true;
+    } else {
+      left.is_null = false;
+      left.value = condition.left_value.data;  // 校验type 或者转换类型
+      type_left = condition.left_value.type;
+      if (condition.right_is_attr && table_meta.field(condition.right_attr.attribute_name) != nullptr && 
+          table_meta.field(condition.right_attr.attribute_name)->type() == DATES &&
+          type_left == CHARS) {
+        type_left = DATES;
+      }
     }
-    
     left.attr_length = 0;
     left.attr_offset = 0;
   }
@@ -101,6 +108,7 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
       LOG_WARN("No such field in condition. %s.%s", table.name(), condition.right_attr.attribute_name);
       return RC::SCHEMA_FIELD_MISSING;
     }
+    right.attr_index = table_meta.field_index(condition.right_attr.attribute_name);
     right.attr_length = field_right->len();
     right.attr_offset = field_right->offset();
     type_right = field_right->type();
@@ -108,25 +116,30 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
     right.value = nullptr;
   } else {
     right.is_attr = false;
-    right.value = condition.right_value.data;
-    type_right = condition.right_value.type;
-    if (condition.left_is_attr && table_meta.field(condition.left_attr.attribute_name) != nullptr && 
-        table_meta.field(condition.left_attr.attribute_name)->type() == DATES &&
-        type_right == CHARS) {
-      type_right = DATES;
+    if (condition.right_value.isnull) {
+      right.is_null = true;
+    } else {
+      right.is_null = false;
+      right.value = condition.right_value.data;
+      type_right = condition.right_value.type;
+      if (condition.left_is_attr && table_meta.field(condition.left_attr.attribute_name) != nullptr && 
+          table_meta.field(condition.left_attr.attribute_name)->type() == DATES &&
+          type_right == CHARS) {
+        type_right = DATES;
+      }
     }
     right.attr_length = 0;
     right.attr_offset = 0;
   }
   
   // 注意:如果到这里函数还没有返回，能继续执行，说明保证如果conditon中attr字段格式一定能和table_meta匹配
-  if (!condition.left_is_attr && condition.right_is_attr && table_meta.field(condition.right_attr.attribute_name)->type() == DATES) {
+  if (!condition.left_is_attr && !condition.left_value.isnull && condition.right_is_attr && table_meta.field(condition.right_attr.attribute_name)->type() == DATES) {
     if (!theGlobalDateUtil()->Check_and_format_date(left.value) == RC::SUCCESS) {
       LOG_WARN("date type filter condition schema mismatch.");
       return  RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
   }
-  if (!condition.right_is_attr && condition.left_is_attr && table_meta.field(condition.left_attr.attribute_name)->type() == DATES) {
+  if (!condition.right_is_attr && !condition.right_value.isnull && condition.left_is_attr && table_meta.field(condition.left_attr.attribute_name)->type() == DATES) {
     if (!theGlobalDateUtil()->Check_and_format_date(right.value) == RC::SUCCESS) {
       LOG_WARN("date type filter condition schema mismatch.");
       return  RC::SCHEMA_FIELD_TYPE_MISMATCH;
@@ -140,10 +153,14 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
   //  }
   // NOTE：这里没有实现不同类型的数据比较，比如整数跟浮点数之间的对比
   // 但是选手们还是要实现。这个功能在预选赛中会出现
-  if (type_left != type_right) {
+  if (!left.is_null && !right.is_null && type_left != type_right) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
-  return init(left, right, type_left, condition.comp);
+  
+  if ((condition.comp == CompOp::IS || condition.comp == CompOp::IS_NOT) && !right.is_null) {
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
+  return init(&table, left, right, type_left, condition.comp);
 }
 
 bool compare_result(int cmp_result, CompOp comp_op) {
@@ -170,18 +187,51 @@ bool DefaultConditionFilter::filter(const Record &rec) const
   char *left_value = nullptr;
   char *right_value = nullptr;
 
+  common::Bitmap null_bitmap((char *)rec.data, table_->table_meta().field_num());
   if (left_.is_attr) {  // value
-    left_value = (char *)(rec.data + left_.attr_offset);
+    if (null_bitmap.get_bit(left_.attr_index)) {
+      left_value = nullptr;
+    } else {
+      left_value = (char *)(rec.data + left_.attr_offset);
+    }
   } else {
-    left_value = (char *)left_.value;
+    if (left_.is_null) {
+      left_value = nullptr;
+    } else {
+      left_value = (char *)left_.value;
+    }
   }
 
   if (right_.is_attr) {
-    right_value = (char *)(rec.data + right_.attr_offset);
+    if (null_bitmap.get_bit(right_.attr_index)) {
+      right_value = nullptr;
+    } else {
+      right_value = (char *)(rec.data + right_.attr_offset);
+    }
   } else {
-    right_value = (char *)right_.value;
+    if (right_.is_null) {
+      right_value = nullptr;
+    } else {
+      right_value = (char *)right_.value;
+    }
   }
 
+  // 1. 左右值其中有一个null
+  if (left_value == nullptr || right_value == nullptr) {
+    if (left_value == nullptr && right_value == nullptr) {
+      if (comp_op_ == CompOp::IS) {
+        return true;
+      }
+    }
+    if (left_value != nullptr && right_value == nullptr) {
+      if (comp_op_ == CompOp::IS_NOT) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 2. 左右值都不是null
   int cmp_result = 0;
   switch (attr_type_) {
     case CHARS: {  // 字符串都是定长的，直接比较
@@ -289,6 +339,9 @@ RC DefaultInnerJoinFilter::init(const JoinConDesc &left, const JoinConDesc &righ
 bool DefaultInnerJoinFilter::filter(std::vector<Tuple> *tuples) const {
   std::shared_ptr<TupleValue> left_value = (*tuples)[left_.table_index].get_pointer(left_.value_index);
   std::shared_ptr<TupleValue> right_value = (*tuples)[right_.table_index].get_pointer(right_.value_index);
+  if (left_value->Type() == AttrType::UNDEFINED || right_value->Type() == AttrType::UNDEFINED) {
+    return false;
+  }
   int cmp_result = left_value->compare(*right_value);
   return compare_result(cmp_result, comp_op_);
 }

@@ -27,6 +27,7 @@ See the Mulan PSL v2 for more details. */
 #include "storage/common/index.h"
 #include "storage/common/bplus_tree_index.h"
 #include "storage/trx/trx.h"
+#include "common/lang/bitmap.h"
 
 Table::Table() : 
     data_buffer_pool_(nullptr),
@@ -320,10 +321,19 @@ RC Table::make_record(int value_num, const Value *values, char * &record_out) {
     return RC::SCHEMA_FIELD_MISSING;
   }
 
+  // TODO(wq): 考虑把这段check逻辑单独提出来???
+  // 检查字段合法(包括类型匹配,null) 以及format日期
   const int normal_field_start_index = table_meta_.sys_field_num();
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
+    if (value.isnull) {
+      if (!field->nullable()) {
+        LOG_ERROR("Invalid null values. field name=%s is not null, but given null", field->name());
+        return RC::CONSTRAINT_NOTNULL;
+      }
+      continue;
+    }
     if (field->type() != value.type) {
       // 如果field类型是date需要接受字符串,然后再检验
       // 匹配日期为 [0000-1-1,2038-2-28]
@@ -350,11 +360,17 @@ RC Table::make_record(int value_num, const Value *values, char * &record_out) {
   // 复制所有字段的值
   int record_size = table_meta_.record_size();
   char *record = new char [record_size];
+  common::Bitmap null_bitmap(record, align8(table_meta_.field_num()));
 
   for (int i = 0; i < value_num; i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &value = values[i];
-    memcpy(record + field->offset(), value.data, field->len());
+    if (value.isnull) {
+      null_bitmap.set_bit(i + normal_field_start_index);
+    } else {
+      null_bitmap.clear_bit(i + normal_field_start_index);
+      memcpy(record + field->offset(), value.data, field->len());
+    }
   }
 
   record_out = record;
@@ -501,14 +517,21 @@ RC Table::scan_record_by_index(Trx *trx, IndexScanner *scanner, ConditionFilter 
 
 class IndexInserter {
 public:
-  explicit IndexInserter(Index *index) : index_(index) {
+  explicit IndexInserter(Table *table, Index *index) : table_(table), index_(index) {
+    field_index_ = table_->table_meta().field_index(index_->index_meta().field());
   }
 
   RC insert_index(const Record *record) {
+    common::Bitmap null_bitmap(record->data, table_->table_meta().field_num());
+    if (null_bitmap.get_bit(field_index_)) {
+      return RC::SUCCESS;
+    }
     return index_->insert_entry(record->data, &record->rid);
   }
 private:
+  Table * table_;
   Index * index_;
+  int field_index_;
 };
 
 static RC insert_index_record_reader_adapter(Record *record, void *context) {
@@ -548,7 +571,7 @@ RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_n
   }
 
   // 遍历当前的所有数据，插入这个索引
-  IndexInserter index_inserter(index);
+  IndexInserter index_inserter(this, index);
   rc = scan_record(trx, nullptr, -1, &index_inserter, insert_index_record_reader_adapter);
   if (rc != RC::SUCCESS) {
     // rollback
@@ -774,6 +797,12 @@ RC Table::rollback_delete(Trx *trx, const RID &rid) {
 RC Table::insert_entry_of_indexes(const char *record, const RID &rid) {
   RC rc = RC::SUCCESS;
   for (Index *index : indexes_) {
+    // 如果非null，才插入
+    common::Bitmap null_bitmap((char *)record, table_meta_.field_num());
+    int field_index = table_meta_.field_index(index->index_meta().field());
+    if (null_bitmap.get_bit(field_index)) {
+      continue;
+    }
     rc = index->insert_entry(record, &rid);
     if (rc != RC::SUCCESS) {
       break;
@@ -785,6 +814,12 @@ RC Table::insert_entry_of_indexes(const char *record, const RID &rid) {
 RC Table::delete_entry_of_indexes(const char *record, const RID &rid, bool error_on_not_exists) {
   RC rc = RC::SUCCESS;
   for (Index *index : indexes_) {
+    // 如果非null,才删除
+    common::Bitmap null_bitmap((char *)record, table_meta_.field_num());
+    int field_index = table_meta_.field_index(index->index_meta().field());
+    if (null_bitmap.get_bit(field_index)) {
+      continue;
+    }
     rc = index->delete_entry(record, &rid);
     if (rc != RC::SUCCESS) {
       if (rc != RC::RECORD_INVALID_KEY || !error_on_not_exists) {
@@ -815,6 +850,10 @@ IndexScanner *Table::find_index_for_scan(const DefaultConditionFilter &filter) {
     value_cond_desc = &filter.left();
   }
   if (field_cond_desc == nullptr || value_cond_desc == nullptr) {
+    return nullptr;
+  }
+  // 如果是 is null和 is not null，则走全表扫
+  if (filter.comp_op() == CompOp::IS || filter.comp_op() == CompOp::IS_NOT) {
     return nullptr;
   }
 

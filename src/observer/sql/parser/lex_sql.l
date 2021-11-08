@@ -78,6 +78,10 @@ QUOTE            [\'\"]
 [Aa][Vv][Gg]                             RETURN_TOKEN(AVG_T);
 [Ss][Uu][Mm]                             RETURN_TOKEN(SUM_T);
 [Cc][Oo][Uu][Nn][Tt]                     RETURN_TOKEN(COUNT_T);
+[Nn][Oo][Tt]                             RETURN_TOKEN(NOT_T);
+[Nn][Uu][Ll][Ll]                         RETURN_TOKEN(NULL_T); // NULL is predefine in C/C++
+[Nn][Uu][Ll][Ll][Aa][Bb][Ll][Ee]         RETURN_TOKEN(NULLABLE_T);
+[Ii][Ss]                                 RETURN_TOKEN(IS_T);
 
 {ID}							                       yylval->string=strdup(yytext); RETURN_TOKEN(ID);
 "("								                       RETURN_TOKEN(LBRACE);

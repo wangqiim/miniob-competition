@@ -687,13 +687,13 @@ RC aggreDesc_check_and_set(Table *table, const Aggregate &aggregate, AggreDesc &
       if (nullptr == field_meta) {
         return RC::SCHEMA_FIELD_MISSING;
       }
-      // 只能对float和int和char字段进行聚集
-      // 不考虑聚合date
-      if (field_meta->type() != AttrType::INTS && field_meta->type() != AttrType::FLOATS && field_meta->type() != AttrType::CHARS) {
+      // 对float和int和char和date字段进行聚集
+      if (field_meta->type() == AttrType::UNDEFINED) {
         return RC::SCHEMA_FIELD_MISSING;
       }
-      // char属性不能进行 sum 和 avg 聚合
-      if (field_meta->type() == AttrType::CHARS && (aggregate.aggre_type == AggreType::SUMS || aggregate.aggre_type == AggreType::AVGS)) {
+      // char和date字段不能进行 sum 和 avg 聚合
+      if ((field_meta->type() == AttrType::CHARS || field_meta->type() == AttrType::DATES) 
+          && (aggregate.aggre_type == AggreType::SUMS || aggregate.aggre_type == AggreType::AVGS)) {
         return RC::SCHEMA_FIELD_MISSING;
       }
       aggre_desc.attr_name = const_cast<char *>(field_meta->name());

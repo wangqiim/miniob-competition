@@ -264,7 +264,9 @@ void AggreSet::init(std::vector<AggreDesc *> &aggres) {
 
 void AggreSet::update_aggre_set(int aggre_index, bool is_null, AttrType attr_type, int len, const char *value) {
   if (is_null) {
-    aggre_count_[aggre_index]++;
+    if (aggres_->at(aggre_index)->is_attr == 0) {
+      aggre_count_[aggre_index]++;
+    }
     return;
   }
   assert(aggre_attr_type_[aggre_index] == AttrType::UNDEFINED || aggre_attr_type_[aggre_index] == attr_type);
@@ -312,7 +314,8 @@ void AggreSet::update_aggre_set(int aggre_index, bool is_null, AttrType attr_typ
       aggre_sum_[aggre_index] += t;
       aggre_avg_[aggre_index] = aggre_sum_[aggre_index] / aggre_count_[aggre_index];
     } break;
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::DATES: {
       if (strncmp(value, aggre_max_[aggre_index], len) > 0) {
           memcpy(aggre_max_[aggre_index], value, len);
       }
@@ -327,13 +330,12 @@ void AggreSet::update_aggre_set(int aggre_index, bool is_null, AttrType attr_typ
 }
 
 RC AggreSet::finish_aggregate() {
-  if (aggre_max_[0] == nullptr) {
-    return RC::GENERIC_ERROR;
-  }
   for (int i = 0; i < aggres_->size(); i++) {
     switch (aggres_->at(i)->aggre_type) {
       case MAXS: {
-        if (aggre_attr_type_[i] == AttrType::INTS) {
+        if (aggre_max_[i] == nullptr) {
+          tuple_.add_null();
+        } else if (aggre_attr_type_[i] == AttrType::INTS) {
           tuple_.add(*((int *)aggre_max_[i]));
         } else if (aggre_attr_type_[i] == AttrType::FLOATS) {
           tuple_.add(*((float *)aggre_max_[i]));
@@ -344,7 +346,9 @@ RC AggreSet::finish_aggregate() {
         }
       } break;
       case MINS: {
-        if (aggre_attr_type_[i] == AttrType::INTS) {
+        if (aggre_min_[i] == nullptr) {
+          tuple_.add_null();
+        } else if (aggre_attr_type_[i] == AttrType::INTS) {
           tuple_.add(*((int *)aggre_min_[i]));
         } else if (aggre_attr_type_[i] == AttrType::FLOATS) {
           tuple_.add(*((float *)aggre_min_[i]));
@@ -355,7 +359,11 @@ RC AggreSet::finish_aggregate() {
         }
       } break;
       case AVGS:
-        tuple_.add(aggre_avg_[i]);
+        if (aggre_count_[i] == 0) {
+          tuple_.add_null();
+        } else {
+          tuple_.add(aggre_avg_[i]);
+        }
         break;
       case SUMS:
         tuple_.add(aggre_sum_[i]);
@@ -451,13 +459,14 @@ void TupleAggregateUtil::aggregate(const char *record) {
       int field_index = table_meta.field_index(cur_aggreDesc->attr_name);
       is_null = null_bitmap.get_bit(field_index);
       switch (field_meta->type()) {
-        case INTS:
-        case FLOATS:
-        case CHARS: 
+        case AttrType::INTS:
+        case AttrType::FLOATS:
+        case AttrType::CHARS:
+        case AttrType::DATES:
           aggre_set_.update_aggre_set(i, is_null, field_meta->type(), field_meta->len(), (record + field_meta->offset()));
           break;
         default:
-          LOG_PANIC("can't aggregate date at present");
+          LOG_PANIC("can't aggregate type %d", field_meta->type());
       }
     } else {
       aggre_set_.update_aggre_set(i, is_null, AttrType::FLOATS, sizeof(float), (char *)(&(aggres_[i]->value)));

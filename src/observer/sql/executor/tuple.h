@@ -245,7 +245,7 @@ public:
   void init(std::vector<AggreDesc *> &aggres);
   
   // 根据每一个记录更新所有聚合函数的中间属性: sum, count等
-  void update_aggre_set(int aggre_index, AttrType attr_type, int len, const char *value);
+  void update_aggre_set(int aggre_index, bool is_null, AttrType attr_type, int len, const char *value);
   
   // 生成最后的输出tuple
   RC finish_aggregate();

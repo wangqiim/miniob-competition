@@ -262,7 +262,11 @@ void AggreSet::init(std::vector<AggreDesc *> &aggres) {
   aggre_count_.resize(aggres_->size(), 0);
 }
 
-void AggreSet::update_aggre_set(int aggre_index, AttrType attr_type, int len, const char *value) {
+void AggreSet::update_aggre_set(int aggre_index, bool is_null, AttrType attr_type, int len, const char *value) {
+  if (is_null) {
+    aggre_count_[aggre_index]++;
+    return;
+  }
   assert(aggre_attr_type_[aggre_index] == AttrType::UNDEFINED || aggre_attr_type_[aggre_index] == attr_type);
   aggre_attr_type_[aggre_index] = attr_type;
 
@@ -438,21 +442,25 @@ void TupleAggregateUtil::aggregate(const char *record) {
   const TableMeta &table_meta = table_->table_meta();
   // 用该record 更新所有的 aggregate函数结果
   for (int i = 0; i < aggres_.size(); i++) {
+    bool is_null = false;
     AggreDesc *cur_aggreDesc = aggres_[i];
     if (cur_aggreDesc->is_attr == 1) {
       const FieldMeta * field_meta = table_meta.field(cur_aggreDesc->attr_name);
       assert(field_meta != nullptr);
+      common::Bitmap null_bitmap(const_cast<char *>(record), table_meta.field_num());
+      int field_index = table_meta.field_index(cur_aggreDesc->attr_name);
+      is_null = null_bitmap.get_bit(field_index);
       switch (field_meta->type()) {
         case INTS:
         case FLOATS:
         case CHARS: 
-          aggre_set_.update_aggre_set(i, field_meta->type(), field_meta->len(), (record + field_meta->offset()));
+          aggre_set_.update_aggre_set(i, is_null, field_meta->type(), field_meta->len(), (record + field_meta->offset()));
           break;
         default:
           LOG_PANIC("can't aggregate date at present");
       }
     } else {
-      aggre_set_.update_aggre_set(i, AttrType::FLOATS, sizeof(float), (char *)(&(aggres_[i]->value)));
+      aggre_set_.update_aggre_set(i, is_null, AttrType::FLOATS, sizeof(float), (char *)(&(aggres_[i]->value)));
     }
   }
 }

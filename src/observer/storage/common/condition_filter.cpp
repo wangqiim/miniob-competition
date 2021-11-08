@@ -339,6 +339,9 @@ RC DefaultInnerJoinFilter::init(const JoinConDesc &left, const JoinConDesc &righ
 bool DefaultInnerJoinFilter::filter(std::vector<Tuple> *tuples) const {
   std::shared_ptr<TupleValue> left_value = (*tuples)[left_.table_index].get_pointer(left_.value_index);
   std::shared_ptr<TupleValue> right_value = (*tuples)[right_.table_index].get_pointer(right_.value_index);
+  if (left_value->Type() == AttrType::UNDEFINED || right_value->Type() == AttrType::UNDEFINED) {
+    return false;
+  }
   int cmp_result = left_value->compare(*right_value);
   return compare_result(cmp_result, comp_op_);
 }

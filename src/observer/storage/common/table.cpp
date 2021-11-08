@@ -853,7 +853,9 @@ IndexScanner *Table::find_index_for_scan(const DefaultConditionFilter &filter) {
     return nullptr;
   }
   // 如果是 is null和 is not null，则走全表扫
-  if (filter.comp_op() == CompOp::IS || filter.comp_op() == CompOp::IS_NOT) {
+  // 如果条件两边有null值，也走全表扫
+  if (filter.comp_op() == CompOp::IS || filter.comp_op() == CompOp::IS_NOT
+      || filter.left().is_null || filter.right().is_null) {
     return nullptr;
   }
 

@@ -517,14 +517,21 @@ RC Table::scan_record_by_index(Trx *trx, IndexScanner *scanner, ConditionFilter 
 
 class IndexInserter {
 public:
-  explicit IndexInserter(Index *index) : index_(index) {
+  explicit IndexInserter(Table *table, Index *index) : table_(table), index_(index) {
+    field_index_ = table_->table_meta().field_index(index_->index_meta().field());
   }
 
   RC insert_index(const Record *record) {
+    common::Bitmap null_bitmap(record->data, table_->table_meta().field_num());
+    if (null_bitmap.get_bit(field_index_)) {
+      return RC::SUCCESS;
+    }
     return index_->insert_entry(record->data, &record->rid);
   }
 private:
+  Table * table_;
   Index * index_;
+  int field_index_;
 };
 
 static RC insert_index_record_reader_adapter(Record *record, void *context) {
@@ -564,7 +571,7 @@ RC Table::create_index(Trx *trx, const char *index_name, const char *attribute_n
   }
 
   // 遍历当前的所有数据，插入这个索引
-  IndexInserter index_inserter(index);
+  IndexInserter index_inserter(this, index);
   rc = scan_record(trx, nullptr, -1, &index_inserter, insert_index_record_reader_adapter);
   if (rc != RC::SUCCESS) {
     // rollback
@@ -790,6 +797,12 @@ RC Table::rollback_delete(Trx *trx, const RID &rid) {
 RC Table::insert_entry_of_indexes(const char *record, const RID &rid) {
   RC rc = RC::SUCCESS;
   for (Index *index : indexes_) {
+    // 如果非null，才插入
+    common::Bitmap null_bitmap((char *)record, table_meta_.field_num());
+    int field_index = table_meta_.field_index(index->index_meta().field());
+    if (null_bitmap.get_bit(field_index)) {
+      continue;
+    }
     rc = index->insert_entry(record, &rid);
     if (rc != RC::SUCCESS) {
       break;
@@ -801,6 +814,12 @@ RC Table::insert_entry_of_indexes(const char *record, const RID &rid) {
 RC Table::delete_entry_of_indexes(const char *record, const RID &rid, bool error_on_not_exists) {
   RC rc = RC::SUCCESS;
   for (Index *index : indexes_) {
+    // 如果非null,才删除
+    common::Bitmap null_bitmap((char *)record, table_meta_.field_num());
+    int field_index = table_meta_.field_index(index->index_meta().field());
+    if (null_bitmap.get_bit(field_index)) {
+      continue;
+    }
     rc = index->delete_entry(record, &rid);
     if (rc != RC::SUCCESS) {
       if (rc != RC::RECORD_INVALID_KEY || !error_on_not_exists) {
@@ -831,6 +850,10 @@ IndexScanner *Table::find_index_for_scan(const DefaultConditionFilter &filter) {
     value_cond_desc = &filter.left();
   }
   if (field_cond_desc == nullptr || value_cond_desc == nullptr) {
+    return nullptr;
+  }
+  // 如果是 is null和 is not null，则走全表扫
+  if (filter.comp_op() == CompOp::IS || filter.comp_op() == CompOp::IS_NOT) {
     return nullptr;
   }
 

@@ -320,9 +320,7 @@ bool CompositeConditionFilter::filter(const Record &rec) const
   return true;
 }
 
-DefaultInnerJoinFilter::~DefaultInnerJoinFilter() = default;
-
-RC DefaultInnerJoinFilter::init(const JoinConDesc &left, const JoinConDesc &right, CompOp comp_op)
+RC DefaultCartesianFilter::init(const CartesianConDesc &left, const CartesianConDesc &right, CompOp comp_op)
 {
   if (comp_op < EQUAL_TO || comp_op >= NO_OP) {
     LOG_ERROR("Invalid condition with unsupported compare operation: %d", comp_op);
@@ -336,7 +334,7 @@ RC DefaultInnerJoinFilter::init(const JoinConDesc &left, const JoinConDesc &righ
 }
 
 
-bool DefaultInnerJoinFilter::filter(std::vector<Tuple> *tuples) const {
+bool DefaultCartesianFilter::filter(std::vector<Tuple> *tuples) const {
   std::shared_ptr<TupleValue> left_value = (*tuples)[left_.table_index].get_pointer(left_.value_index);
   std::shared_ptr<TupleValue> right_value = (*tuples)[right_.table_index].get_pointer(right_.value_index);
   if (left_value->Type() == AttrType::UNDEFINED || right_value->Type() == AttrType::UNDEFINED) {
@@ -346,22 +344,21 @@ bool DefaultInnerJoinFilter::filter(std::vector<Tuple> *tuples) const {
   return compare_result(cmp_result, comp_op_);
 }
 
-CompositeJoinFilter::~CompositeJoinFilter() {
+CompositeCartesianFilter::~CompositeCartesianFilter() {
   if (memory_owner_) {
     for (auto & filter : filters_) {
       delete filter;
     }
-    std::vector<DefaultInnerJoinFilter *>().swap(filters_);
   }
 }
 
-RC CompositeJoinFilter::init(std::vector<DefaultInnerJoinFilter *> &&filters, bool own_memory) {
+RC CompositeCartesianFilter::init(std::vector<DefaultCartesianFilter *> &&filters, bool own_memory) {
   filters_ = std::move(filters);
   memory_owner_ = own_memory;
   return RC::SUCCESS;
 }
 
-bool CompositeJoinFilter::filter(std::vector<Tuple> *tuples) const {
+bool CompositeCartesianFilter::filter(std::vector<Tuple> *tuples) const {
   if (tuples->empty()) {
     return false;
   }

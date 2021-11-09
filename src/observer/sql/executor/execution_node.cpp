@@ -49,9 +49,9 @@ RC SelectExeNode::execute(TupleSet &tuple_set) {
   return table_->scan_record(trx_, &condition_filter, -1, (void *)&converter, record_reader);
 }
 
-RC JoinExeNode::init(Trx *trx, std::vector<TupleSet> &&tuple_sets,
+RC cartesianExeNode::init(Trx *trx, std::vector<TupleSet> &&tuple_sets,
                      TupleSchema &&tuple_schema,
-                     CompositeJoinFilter *condition_filter,
+                     CompositeCartesianFilter *condition_filter,
                      std::map<std::string, std::pair<int, std::map<std::string, int>>> &&table_value_index) {
   trx_ = trx;
   tuple_sets_ = std::move(tuple_sets);
@@ -61,7 +61,7 @@ RC JoinExeNode::init(Trx *trx, std::vector<TupleSet> &&tuple_sets,
   return RC::SUCCESS;
 }
 
-RC JoinExeNode::execute(TupleSet &tuple_set) {
+RC cartesianExeNode::execute(TupleSet &tuple_set) {
   tuple_set.set_schema(tuple_schema_);
   for (auto iter = TupleSetDescartesIterator(&tuple_sets_); !iter.End(); ++iter) {
     std::unique_ptr<std::vector<Tuple>> tuples = *iter;

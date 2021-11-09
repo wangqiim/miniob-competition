@@ -37,7 +37,7 @@ See the Mulan PSL v2 for more details. */
 using namespace common;
 
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, SelectExeNode &select_node);
-RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, JoinExeNode &join_exe_node);
+RC create_cartesian_selection_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, cartesianExeNode &cartesian_exe_node);
 RC create_aggregate_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, AggregateExeNode &aggregate_node);
 RC aggreDesc_check_and_set(Table *table, const Aggregate &aggregate, AggreDesc &aggre_desc);
 
@@ -381,11 +381,11 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
 
   std::stringstream ss;
   if (tuple_sets.size() > 1) {
-    // 本次查询了多张表，需要做join操作
-    JoinExeNode join_exe_node;
-    create_join_selection_executor(trx, selects, db, std::move(tuple_sets), join_exe_node);
+    // 本次查询了多张表，需要做Cartesian操作
+    cartesianExeNode cartesian_exe_node;
+    create_cartesian_selection_executor(trx, selects, db, std::move(tuple_sets), cartesian_exe_node);
     TupleSet tuple_set;
-    join_exe_node.execute(tuple_set);
+    cartesian_exe_node.execute(tuple_set);
     tuple_set.print(ss, true);
   } else {
     // 当前只查询一张表，直接返回结果即可
@@ -477,7 +477,7 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
 }
 
 
-RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, JoinExeNode &join_exe_node) {
+RC create_cartesian_selection_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, cartesianExeNode &cartesian_exe_node) {
   // {table_name: table}
   auto table_map = std::make_unique<std::map<std::string, Table*>>();
   // {table_name: (table_index, {value_name: value_index})}
@@ -529,7 +529,7 @@ RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *
   }
 
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
-  std::vector<DefaultInnerJoinFilter *> condition_filters;
+  std::vector<DefaultCartesianFilter *> condition_filters;
   for (size_t i = 0; i < selects.condition_num; i++) {
     const Condition &condition = selects.conditions[i];
     if (condition.left_is_attr == 1 && condition.right_is_attr == 1) { // 两边都是属性的condition才需要做联表查询
@@ -540,7 +540,7 @@ RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *
       auto find_left_value = find_left_table->second.second.find(condition.left_attr.attribute_name);
       assert(find_left_value != find_left_table->second.second.end());
       int left_value_index = find_left_value->second;
-      JoinConDesc left_cond{left_table_index, left_value_index};
+      CartesianConDesc left_cond{left_table_index, left_value_index};
       // right condition
       auto find_right_table = table_value_index.find(condition.right_attr.relation_name);
       assert(find_right_table != table_value_index.end());
@@ -548,18 +548,18 @@ RC create_join_selection_executor(Trx *trx, const Selects &selects, const char *
       auto find_right_value = find_right_table->second.second.find(condition.right_attr.attribute_name);
       assert(find_right_value != find_right_table->second.second.end());
       int right_value_index = find_right_value->second;
-      JoinConDesc right_cond{right_table_index, right_value_index};
+      CartesianConDesc right_cond{right_table_index, right_value_index};
       // build condition
-      auto *condition_filter = new DefaultInnerJoinFilter();
+      auto *condition_filter = new DefaultCartesianFilter();
       condition_filter->init(left_cond, right_cond, condition.comp);
 
       condition_filters.push_back(condition_filter);
     }
   }
-  auto *condition_filter = new CompositeJoinFilter();
+  auto *condition_filter = new CompositeCartesianFilter();
   condition_filter->init(std::move(condition_filters), condition_filters.size());
 
-  return join_exe_node.init(trx, std::move(tuple_sets),
+  return cartesian_exe_node.init(trx, std::move(tuple_sets),
                             std::move(schema),
                             condition_filter,
                             std::move(table_value_index));

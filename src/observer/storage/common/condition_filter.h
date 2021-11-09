@@ -103,14 +103,14 @@ private:
 };
 
 
-struct JoinConDesc {
+struct CartesianConDesc {
   int table_index;
   int value_index;
 };
 
-class JoinFilter {
+class CartesianFilter {
 public:
-  virtual ~JoinFilter() = default;
+  virtual ~CartesianFilter() = default;
 
   /**
    * Filter cross multi table
@@ -120,32 +120,32 @@ public:
   virtual bool filter(std::vector<Tuple> *tuples) const = 0;
 };
 
-class DefaultInnerJoinFilter : public JoinFilter {
+class DefaultCartesianFilter : public CartesianFilter {
 public:
-  DefaultInnerJoinFilter() = default;
-  virtual ~DefaultInnerJoinFilter();
-  // tuples中的每个Tuple对应一个table的Tuple，JoinConDesc.table_index是tuples的下标
-  // 每个Tuple中的vector<TupleValue>表示table中的一行数据，JoinConDesc.value_index是vector<TupleValue>的下标
+  DefaultCartesianFilter() = default;
+  virtual ~DefaultCartesianFilter() = default;
+  // tuples中的每个Tuple对应一个table的Tuple，CartesianConDesc.table_index是tuples的下标
+  // 每个Tuple中的vector<TupleValue>表示table中的一行数据，CartesianConDesc.value_index是vector<TupleValue>的下标
   virtual bool filter(std::vector<Tuple> *tuples) const;
 
-  RC init(const JoinConDesc &left, const JoinConDesc &right, CompOp comp_op);
+  RC init(const CartesianConDesc &left, const CartesianConDesc &right, CompOp comp_op);
 
 private:
-  JoinConDesc  left_;
-  JoinConDesc  right_;
+  CartesianConDesc  left_;
+  CartesianConDesc  right_;
   CompOp   comp_op_ = NO_OP;
 };
 
-class CompositeJoinFilter : public JoinFilter {
+class CompositeCartesianFilter : public CartesianFilter {
 public:
-  CompositeJoinFilter() = default;
-  virtual ~CompositeJoinFilter();
+  CompositeCartesianFilter() = default;
+  virtual ~CompositeCartesianFilter();
 
-  RC init(std::vector<DefaultInnerJoinFilter *> &&filters, bool own_memory=false);
+  RC init(std::vector<DefaultCartesianFilter *> &&filters, bool own_memory=false);
   virtual bool filter(std::vector<Tuple> *tuples) const;
 
 private:
-  std::vector<DefaultInnerJoinFilter *> filters_;
+  std::vector<DefaultCartesianFilter *> filters_;
   bool memory_owner_ = false; // filters_的内存是否由自己来控制
 };
 

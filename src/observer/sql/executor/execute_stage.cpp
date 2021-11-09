@@ -408,14 +408,14 @@ bool match_table(const Selects &selects, const char *table_name_in_condition, co
   return selects.relation_num == 1;
 }
 
-static RC schema_add_field(Table *table, const char *field_name, TupleSchema &schema) {
+static RC schema_add_field(Table *table, const char *field_name, TupleSchema &schema, int order = 0) {
   const FieldMeta *field_meta = table->table_meta().field(field_name);
   if (nullptr == field_meta) {
     LOG_WARN("No such field. %s.%s", table->name(), field_name);
     return RC::SCHEMA_FIELD_MISSING;
   }
 
-  schema.add_if_not_exists(field_meta->type(), table->name(), field_meta->name());
+  schema.add_if_not_exists(field_meta->type(), table->name(), field_meta->name(), order);
   return RC::SUCCESS;
 }
 
@@ -473,7 +473,20 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
     }
   }
 
-  return select_node.init(trx, table, std::move(schema), std::move(condition_filters));
+  // 找出仅与该表相关的order-by
+  
+  TupleSchema order_by_schema;
+  for (size_t i = 0; i < selects.order_num; i++) {
+    const RelAttr &attr = selects.order_by[i].attribute;
+    if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
+      RC rc = schema_add_field(table, attr.attribute_name, order_by_schema, selects.order_by[i].order);
+      if (rc != RC::SUCCESS) {
+        return rc;
+      }
+    }
+  }
+  
+  return select_node.init(trx, table, std::move(schema), std::move(condition_filters), std::move(order_by_schema));
 }
 
 

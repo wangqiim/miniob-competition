@@ -64,8 +64,8 @@ private:
 
 class TupleField {
 public:
-  TupleField(AttrType type, const char *table_name, const char *field_name) :
-          type_(type), table_name_(table_name), field_name_(field_name){
+  TupleField(AttrType type, const char *table_name, const char *field_name, int order) :
+          type_(type), table_name_(table_name), field_name_(field_name), order_(order) {
   }
 
   AttrType  type() const{
@@ -78,12 +78,13 @@ public:
   const char *field_name() const {
     return field_name_.c_str();
   }
-
+  bool order() const { return order_; }
   std::string to_string() const;
 private:
   AttrType  type_;
   std::string table_name_;
   std::string field_name_;
+  int order_;
 };
 
 class TupleSchema {
@@ -91,23 +92,20 @@ public:
   TupleSchema() = default;
   ~TupleSchema() = default;
 
-  void add(AttrType type, const char *table_name, const char *field_name);
-  void add_if_not_exists(AttrType type, const char *table_name, const char *field_name);
+  void add(AttrType type, const char *table_name, const char *field_name, int order);
+  void add_if_not_exists(AttrType type, const char *table_name, const char *field_name, int order);
   // void merge(const TupleSchema &other);
   void append(const TupleSchema &other);
 
-  const std::vector<TupleField> &fields() const {
-    return fields_;
-  }
+  const std::vector<TupleField> &fields() const { return fields_; }
 
-  const TupleField &field(int index) const {
-    return fields_[index];
-  }
+  bool empty() const { return fields_.size() == 0; }
+
+  const TupleField &field(int index) const { return fields_[index]; }
 
   int index_of_field(const char *table_name, const char *field_name) const;
-  void clear() {
-    fields_.clear();
-  }
+
+  void clear() { fields_.clear(); }
 
   void print(std::ostream &os, bool multi_table = false) const;
 public:
@@ -147,6 +145,7 @@ public:
 private:
   std::vector<Tuple> tuples_;
   TupleSchema schema_;
+
 };
 
 class TupleSetDescartesIterator {
@@ -209,12 +208,21 @@ private:
 
 class TupleRecordConverter {
 public:
-  TupleRecordConverter(Table *table, TupleSet &tuple_set);
+  TupleRecordConverter(Table *table, TupleSet &tuple_set, TupleSchema &order_by_schema);
 
+  // 如果order_by_schema非空，则先将数据注入到tmp_tuple_set_中用来后续牌序
   void add_record(const char *record);
+
+  // 如果必要，则将所有数据进行牌序，并且注入到tuple_set_中 
+  void sort();
 private:
   Table *table_;
   TupleSet &tuple_set_;
+
+  bool need_sort_;
+  TupleSchema all_tuple_schema_;
+  TupleSet    tmp_tuple_set_; //临时tmp_tuple_set_用来牌序
+  TupleSchema &order_by_schema_;
 };
 
 struct AggreDesc {

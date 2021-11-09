@@ -83,6 +83,9 @@ public:
   int compare(const TupleValue &other) const override {
     const FloatValue & float_other = (const FloatValue &)other;
     float result = value_ - float_other.value_;
+    if (-1e-5 < result && result < 1e-5) {
+      return 0;
+    }
     if (result > 0) { // 浮点数没有考虑精度问题
       return 1;
     }

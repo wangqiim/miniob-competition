@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include <algorithm>
 
 #include "sql/executor/tuple.h"
+#include "sql/executor/util.h"
 #include "storage/common/table.h"
 #include "common/log/log.h"
 #include "common/lang/bitmap.h"
@@ -74,16 +75,16 @@ void TupleSchema::from_table(const Table *table, TupleSchema &schema) {
   for (int i = 0; i < field_num; i++) {
     const FieldMeta *field_meta = table_meta.field(i);
     if (field_meta->visible()) {
-      schema.add(field_meta->type(), table_name, field_meta->name());
+      schema.add(field_meta->type(), table_name, field_meta->name(), 0);
     }
   }
 }
 
-void TupleSchema::add(AttrType type, const char *table_name, const char *field_name) {
-  fields_.emplace_back(type, table_name, field_name);
+void TupleSchema::add(AttrType type, const char *table_name, const char *field_name, int order) {
+  fields_.emplace_back(type, table_name, field_name, order);
 }
 
-void TupleSchema::add_if_not_exists(AttrType type, const char *table_name, const char *field_name) {
+void TupleSchema::add_if_not_exists(AttrType type, const char *table_name, const char *field_name, int order) {
   for (const auto &field: fields_) {
     if (0 == strcmp(field.table_name(), table_name) &&
         0 == strcmp(field.field_name(), field_name)) {
@@ -91,7 +92,7 @@ void TupleSchema::add_if_not_exists(AttrType type, const char *table_name, const
     }
   }
 
-  add(type, table_name, field_name);
+  add(type, table_name, field_name, order);
 }
 
 void TupleSchema::append(const TupleSchema &other) {
@@ -205,16 +206,22 @@ const std::vector<Tuple> &TupleSet::tuples() const {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-TupleRecordConverter::TupleRecordConverter(Table *table, TupleSet &tuple_set) :
-      table_(table), tuple_set_(tuple_set){
+TupleRecordConverter::TupleRecordConverter(Table *table, TupleSet &tuple_set, TupleSchema &order_by_schema) :
+      table_(table), tuple_set_(tuple_set), order_by_schema_(order_by_schema), need_sort_(!order_by_schema.empty()) {
+  if (need_sort_) {
+    TupleSchema::from_table(table_, all_tuple_schema_);
+  }
 }
 
 void TupleRecordConverter::add_record(const char *record) {
-  const TupleSchema &schema = tuple_set_.schema();
+  const TupleSchema *schema = &tuple_set_.schema();
+  if (need_sort_) {
+    schema = &all_tuple_schema_;
+  }
   Tuple tuple;
   const TableMeta &table_meta = table_->table_meta();
   common::Bitmap null_bitmap((char *)record, align8(table_meta.field_num()));
-  for (const TupleField &field : schema.fields()) {
+  for (const TupleField &field : schema->fields()) {
     const FieldMeta *field_meta = table_meta.field(field.field_name());
     assert(field_meta != nullptr);
     int index = table_meta.field_index(field.field_name());
@@ -248,8 +255,32 @@ void TupleRecordConverter::add_record(const char *record) {
       }
     }
   }
+  if (need_sort_) {
+    tmp_tuple_set_.add(std::move(tuple));
+  } else {
+    tuple_set_.add(std::move(tuple));
+  }
+}
 
-  tuple_set_.add(std::move(tuple));
+void TupleRecordConverter::sort() {
+  // 1. 排序
+  std::vector<Tuple> &tuples = const_cast<std::vector<Tuple> &>(tmp_tuple_set_.tuples());
+  TupleSortUtil::set(*table_, order_by_schema_);
+  std::sort(tuples.begin(), tuples.end(), TupleSortUtil::cmp);
+
+  // 2.调整为输出顺序
+  const TupleSchema &output_schema = tuple_set_.schema();
+  const TableMeta &table_meta = table_->table_meta();
+  for (int i = 0; i < tuples.size(); i++) {
+    Tuple tuple;
+    std::vector<std::shared_ptr<TupleValue>> &values = const_cast<std::vector<std::shared_ptr<TupleValue>> &>(tuples[i].values());
+    for (const TupleField &field : output_schema.fields()) {
+      const FieldMeta *field_meta = table_meta.field(field.field_name());
+      int index = table_meta.field_index(field.field_name()) - table_meta.sys_field_num();
+      tuple.add(values[index]);
+    }
+    tuple_set_.add(std::move(tuple));
+  }
 }
 
 void AggreSet::init(std::vector<AggreDesc *> &aggres) {

@@ -36,13 +36,14 @@ public:
   SelectExeNode();
   virtual ~SelectExeNode();
 
-  RC init(Trx *trx, Table *table, TupleSchema && tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters);
+  RC init(Trx *trx, Table *table, TupleSchema && tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters, TupleSchema &&order_by_schema);
 
   RC execute(TupleSet &tuple_set) override;
 private:
   Trx *trx_ = nullptr;
   Table  * table_;
-  TupleSchema  tuple_schema_;
+  TupleSchema  tuple_schema_; // output schema
+  TupleSchema  order_by_schema_;
   std::vector<DefaultConditionFilter *> condition_filters_;
 };
 

@@ -82,6 +82,9 @@ QUOTE            [\'\"]
 [Nn][Uu][Ll][Ll]                         RETURN_TOKEN(NULL_T); // NULL is predefine in C/C++
 [Nn][Uu][Ll][Ll][Aa][Bb][Ll][Ee]         RETURN_TOKEN(NULLABLE_T);
 [Ii][Ss]                                 RETURN_TOKEN(IS_T);
+[Oo][Rr][Dd][Ee][Rr]                     RETURN_TOKEN(ORDER);
+[Bb][Yy]                                 RETURN_TOKEN(BY);
+[Aa][Ss][Cc]                             RETURN_TOKEN(ASC);
 
 {ID}							                       yylval->string=strdup(yytext); RETURN_TOKEN(ID);
 "("								                       RETURN_TOKEN(LBRACE);

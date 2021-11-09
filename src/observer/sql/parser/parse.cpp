@@ -157,6 +157,12 @@ void selects_append_conditions(Selects *selects, Condition conditions[], size_t 
   selects->condition_num = condition_num;
 }
 
+void selects_append_order(Selects *selects, RelAttr *rel_attr, int order) {
+  selects->order_by[selects->order_num].attribute = *rel_attr;
+  selects->order_by[selects->order_num].order = order;
+  selects->order_num++;
+}
+
 void selects_destroy(Selects *selects) {
   for (size_t i = 0; i < selects->attr_num; i++) {
     relation_attr_destroy(&selects->attributes[i]);
@@ -178,6 +184,11 @@ void selects_destroy(Selects *selects) {
     relation_aggre_destroy(&selects->aggregates[i]);
   }
   selects->condition_num = 0;
+  
+  for (size_t i = 0; i < selects->order_num; i++) {
+    relation_attr_destroy(&selects->attributes[i]);
+  }
+  selects->order_num = 0;
 }
 
 void inserts_init(Inserts *inserts, const char *relation_name) {

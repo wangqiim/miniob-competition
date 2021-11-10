@@ -343,7 +343,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   const Selects &selects = sql->sstr.selection;
   // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
-  for (size_t i = 0; i < selects.relation_num; i++) {
+  for (int i = selects.relation_num - 1; i >= 0; i--) {
     const char *table_name = selects.relations[i];
     SelectExeNode *select_node = new SelectExeNode;
     rc = create_selection_executor(trx, selects, db, table_name, *select_node);
@@ -383,7 +383,10 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   if (tuple_sets.size() > 1) {
     // 本次查询了多张表，需要做Cartesian操作
     cartesianExeNode cartesian_exe_node;
-    create_cartesian_selection_executor(trx, selects, db, std::move(tuple_sets), cartesian_exe_node);
+    rc = create_cartesian_selection_executor(trx, selects, db, std::move(tuple_sets), cartesian_exe_node);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
     TupleSet tuple_set;
     cartesian_exe_node.execute(tuple_set);
     tuple_set.print(ss, true);
@@ -514,13 +517,13 @@ RC create_cartesian_selection_executor(Trx *trx, const Selects &selects, const c
     table_value_index.emplace(table_name, std::pair<int, std::map<std::string, int>>{table_index, value_index_map});
   }
   // 构造多表查询返回schema
-  TupleSchema schema;
+  TupleSchema output_schema;
   if (selects.attr_num == 1 // select * from t1, t2
     && nullptr == selects.attributes[0].relation_name
     && strcmp("*", selects.attributes[0].attribute_name) == 0 ) {
     for (int i = selects.relation_num -1; i >= 0; --i) {
       auto find_table = table_map->find(selects.relations[i]);
-      TupleSchema::from_table(find_table->second, schema);
+      TupleSchema::from_table(find_table->second, output_schema);
     }
   } else {
     for (int i = selects.attr_num - 1; i >= 0; i--) {
@@ -531,9 +534,9 @@ RC create_cartesian_selection_executor(Trx *trx, const Selects &selects, const c
       // todo(yqs): 前置校验项，relation_name必须存在，且必须存在于selects.relations
       assert(find_table != table_map->end());
       if (0 == strcmp("*", attr.attribute_name)) {
-        TupleSchema::from_table(find_table->second, schema);
+        TupleSchema::from_table(find_table->second, output_schema);
       } else {
-        RC rc = schema_add_field(find_table->second, attr.attribute_name, schema);
+        RC rc = schema_add_field(find_table->second, attr.attribute_name, output_schema);
         if (rc != RC::SUCCESS) {
           return rc;
         }
@@ -572,10 +575,39 @@ RC create_cartesian_selection_executor(Trx *trx, const Selects &selects, const c
   auto *condition_filter = new CompositeCartesianFilter();
   condition_filter->init(std::move(condition_filters), condition_filters.size());
 
+  // 构造order_by schema
+  TupleSchema order_by_schema;
+  std::map<std::string, std::map<std::string, int>> field_index;
+  if (selects.order_num != 0) {
+    for (size_t i = 0; i < selects.order_num; i++) {
+      const RelAttr &attr = selects.order_by[i].attribute;
+      table = DefaultHandler::DefaultHandler::get_default().find_table(db, attr.relation_name);
+      if (nullptr == table) {
+        LOG_ERROR("No such table [%s] in db [%s]", attr.relation_name, db);
+        return RC::SCHEMA_TABLE_NOT_EXIST;
+      }
+      RC rc = schema_add_field(table, attr.attribute_name, order_by_schema, selects.order_by[i].order);
+      if (rc != RC::SUCCESS) {
+        return rc;
+      }
+    }
+    int fields_num = 0;
+    for (int i = selects.relation_num - 1; i >= 0; --i) {
+      field_index[selects.relations[i]] = {};
+      Table *t = DefaultHandler::get_default().find_table(db, selects.relations[i]);
+      for (int j = t->table_meta().sys_field_num(); j < t->table_meta().field_num(); j++) {
+        field_index[selects.relations[i]][t->table_meta().field(j)->name()] = fields_num + j - t->table_meta().sys_field_num();
+      }
+      fields_num += t->table_meta().field_num() - t->table_meta().sys_field_num();
+    }
+  }
+  
   return cartesian_exe_node.init(trx, std::move(tuple_sets),
-                            std::move(schema),
+                            std::move(output_schema),
                             condition_filter,
-                            std::move(table_value_index));
+                            std::move(table_value_index),
+                            std::move(field_index),
+                            std::move(order_by_schema));
 }
 RC ExecuteStage::do_aggregate(const char *db, Query *sql, SessionEvent *session_event) {
 

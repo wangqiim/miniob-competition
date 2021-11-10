@@ -265,7 +265,13 @@ void TupleRecordConverter::add_record(const char *record) {
 void TupleRecordConverter::sort() {
   // 1. 排序
   std::vector<Tuple> &tuples = const_cast<std::vector<Tuple> &>(tmp_tuple_set_.tuples());
-  TupleSortUtil::set(*table_, order_by_schema_);
+  std::map<std::string, std::map<std::string, int>> field_index;
+  field_index[table_->name()] = {};
+  for (const TupleField &field : all_tuple_schema_.fields()) {
+    int index = table_->table_meta().field_index(field.field_name()) - table_->table_meta().sys_field_num();
+    field_index[table_->name()][field.field_name()] = index;
+  }
+  TupleSortUtil::set(field_index, order_by_schema_);
   std::sort(tuples.begin(), tuples.end(), TupleSortUtil::cmp);
 
   // 2.调整为输出顺序

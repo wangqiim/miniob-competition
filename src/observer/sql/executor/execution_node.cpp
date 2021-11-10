@@ -12,9 +12,12 @@ See the Mulan PSL v2 for more details. */
 // Created by Wangyunlai on 2021/5/14.
 //
 
+#include "algorithm"
+
 #include "sql/executor/execution_node.h"
 #include "storage/common/table.h"
 #include "common/log/log.h"
+#include "sql/executor/util.h"
 
 SelectExeNode::SelectExeNode() : table_(nullptr) {
 }
@@ -55,24 +58,58 @@ RC SelectExeNode::execute(TupleSet &tuple_set) {
 }
 
 RC cartesianExeNode::init(Trx *trx, std::vector<TupleSet> &&tuple_sets,
-                     TupleSchema &&tuple_schema,
+                     TupleSchema &&output_tuple_schema,
                      CompositeCartesianFilter *condition_filter,
-                     std::map<std::string, std::pair<int, std::map<std::string, int>>> &&table_value_index) {
+                     std::map<std::string, std::pair<int, std::map<std::string, int>>> &&table_value_index,
+                     std::map<std::string, std::map<std::string, int>> &&field_index,
+                     TupleSchema &&order_tuple_schema) {
   trx_ = trx;
   tuple_sets_ = std::move(tuple_sets);
   condition_filter_ = condition_filter;
-  tuple_schema_ = tuple_schema;
+  output_tuple_schema_ = output_tuple_schema;
   table_value_index_ = std::move(table_value_index);
+  field_index_ = std::move(field_index); // 用于order-by
+  order_by_tuple_schema_ = order_tuple_schema; //用于order-by
   return RC::SUCCESS;
 }
 
 RC cartesianExeNode::execute(TupleSet &tuple_set) {
-  tuple_set.set_schema(tuple_schema_);
+  tuple_set.set_schema(output_tuple_schema_);
+  if (!order_by_tuple_schema_.empty()) {
+    for (auto iter = TupleSetDescartesIterator(&tuple_sets_); !iter.End(); ++iter) {
+      std::unique_ptr<std::vector<Tuple>> tuples = *iter;
+      if (condition_filter_->filter(tuples.get())) {
+        Tuple tmp_tuple;
+        for (auto &tuple : *tuples) {
+          for (int i = 0; i < tuple.size(); i++) {
+            tmp_tuple.add(tuple.get_pointer(i));
+          }
+        }
+        tmp_tuple_set_.add(std::move(tmp_tuple));
+      }
+    }
+
+    TupleSortUtil::set(field_index_, order_by_tuple_schema_);
+    std::vector<Tuple> &tuples = const_cast<std::vector<Tuple> &>(tmp_tuple_set_.tuples());
+    std::sort(tuples.begin(), tuples.end(), TupleSortUtil::cmp);
+
+    // tmp_tuple_set -> output_tuple_schema
+    for (const Tuple &tuple : tuples) {
+      Tuple output_tuple;
+      for(const auto & field :output_tuple_schema_.fields()) {
+        int value_index = field_index_[field.table_name()][field.field_name()];
+        output_tuple.add(tuple.get_pointer(value_index));
+      }
+      tuple_set.add(std::move(output_tuple));
+    }
+    return RC::SUCCESS;
+  }
+  // 不需要经过tmp_tuple进行排序
   for (auto iter = TupleSetDescartesIterator(&tuple_sets_); !iter.End(); ++iter) {
     std::unique_ptr<std::vector<Tuple>> tuples = *iter;
     if (condition_filter_->filter(tuples.get())) {
       Tuple validate_tuple;
-      for(const auto & field :tuple_schema_.fields()) {
+      for(const auto & field :output_tuple_schema_.fields()) {
         auto find_table_index = table_value_index_.find(field.table_name());
         assert(find_table_index != table_value_index_.end());
         int table_index = find_table_index->second.first;

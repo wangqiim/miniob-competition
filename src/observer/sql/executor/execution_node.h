@@ -55,9 +55,11 @@ public:
   }
 
   RC init(Trx *trx, std::vector<TupleSet> &&tuple_sets,
-          TupleSchema &&tuple_schema,
+          TupleSchema &&output_tuple_schema,
           CompositeCartesianFilter *condition_filter,
-          std::map<std::string, std::pair<int, std::map<std::string, int>>> &&table_value_index);
+          std::map<std::string, std::pair<int, std::map<std::string, int>>> &&table_value_index,
+          std::map<std::string, std::map<std::string, int>> &&field_index,
+          TupleSchema &&order_tuple_schema);
 
   RC execute(TupleSet &tuple_set) override;
 
@@ -65,9 +67,13 @@ private:
   Trx *trx_ = nullptr;
   std::vector<TupleSet> tuple_sets_;
   CompositeCartesianFilter *condition_filter_;
-  TupleSchema  tuple_schema_;
+  TupleSchema  output_tuple_schema_;
   // {table_name: (table_index, {value_name: value_index})}
   std::map<std::string, std::pair<int, std::map<std::string, int>>> table_value_index_;
+
+  std::map<std::string, std::map<std::string, int>> field_index_;
+  TupleSet tmp_tuple_set_; // 用来排序
+  TupleSchema  order_by_tuple_schema_;
 };
 
 // 拥有DefaultConditionFilter和AggreDesc的所有按，析构时需要释放内存

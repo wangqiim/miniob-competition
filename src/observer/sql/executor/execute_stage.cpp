@@ -40,8 +40,11 @@ RC create_field_index(const Selects &selects, const char *db, std::map<std::stri
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, SelectExeNode &select_node);
 RC create_cartesian_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, 
                               cartesianExeNode &cartesian_exe_node, const std::map<std::string, std::map<std::string, int>> &field_index);
+RC create_orderby_executor(Trx *trx, const Selects &selects, const char *db, OrderByExeNode &order_by_exe_node,
+                            const std::map<std::string, std::map<std::string, int>> &field_index);
 RC create_aggregate_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, AggregateExeNode &aggregate_node);
-RC create_output_executor(Trx *trx, const Selects &selects, const char *db, TupleSet &&tuple_set, OutputExeNode &output_node, const std::map<std::string, std::map<std::string, int>> &field_index);
+RC create_output_executor(Trx *trx, const Selects &selects, const char *db, TupleSet &&tuple_set, OutputExeNode &output_node,
+                            const std::map<std::string, std::map<std::string, int>> &field_index);
 RC aggreDesc_check_and_set(Table *table, const Aggregate &aggregate, AggreDesc &aggre_desc);
 
 //! Constructor
@@ -389,10 +392,12 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   rc = create_field_index(selects, db, field_index);
   assert(rc == RC::SUCCESS);
 
+  bool is_multi_table = (tuple_sets.size() > 1);
+  
   TupleSet tmp_tuple_set;
 
   // 2. 如果本次查询了多张表，需要做Cartesian操作，合并成一个TupleSet
-  if (tuple_sets.size() > 1) {
+  if (is_multi_table) {
     cartesianExeNode cartesian_exe_node;
     rc = create_cartesian_executor(trx, selects, db, std::move(tuple_sets), cartesian_exe_node, field_index);
     assert(rc == RC::SUCCESS);
@@ -401,8 +406,15 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     tmp_tuple_set = std::move(tuple_sets.front());
   }
   // ----------------------
-  // 3. todo(wq): order-by node
-  // ----------------------
+  // 3. order-by node
+  if (selects.order_num != 0) {
+    OrderByExeNode orderByExeNode;
+    rc = create_orderby_executor(trx, selects, db, orderByExeNode, field_index);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+    orderByExeNode.execute(tmp_tuple_set);
+  }
   // 4. todo(wq): aggregate node
   // ----------------------
   // 5. 生成输出tupleset
@@ -413,7 +425,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   outputExeNode.execute(output_tuple_set);
 
   std::stringstream ss;
-  output_tuple_set.print(ss, true);
+  output_tuple_set.print(ss, is_multi_table);
   
   for (SelectExeNode *& tmp_node: select_nodes) {
     delete tmp_node;
@@ -526,6 +538,31 @@ RC create_cartesian_executor(Trx *trx, const Selects &selects, const char *db, s
   
   return cartesian_exe_node.init(trx, std::move(tuple_sets), condition_filter, std::move(cartesian_schema));
 }
+
+RC create_orderby_executor(Trx *trx, const Selects &selects, const char *db, OrderByExeNode &order_by_exe_node,
+                            const std::map<std::string, std::map<std::string, int>> &field_index) {
+  TupleSchema order_by_schema;
+  Table *table;
+  for (size_t i = 0; i < selects.order_num; i++) {
+    const RelAttr &attr = selects.order_by[i].attribute;
+    if (attr.relation_name != nullptr) {
+      table = DefaultHandler::DefaultHandler::get_default().find_table(db, attr.relation_name);
+    } else {
+      table = DefaultHandler::DefaultHandler::get_default().find_table(db, selects.relations[0]);
+    }
+    // todo(wq): 前置校验
+    if (nullptr == table) {
+      LOG_ERROR("No such table [%s] in db [%s]", attr.relation_name, db);
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+    RC rc = schema_add_field(table, attr.attribute_name, order_by_schema, selects.order_by[i].order);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+  }
+  return order_by_exe_node.init(trx, std::move(order_by_schema), field_index);                    
+}
+
 
 RC create_output_executor(Trx *trx, const Selects &selects, const char *db,
                           TupleSet &&tuple_set, OutputExeNode &output_node,

@@ -24,7 +24,7 @@ public:
     return ret < 0;
   }
 
-  static void set(std::map<std::string, std::map<std::string, int>> &field_index, const TupleSchema &order_by_schema) {
+  static void set(const std::map<std::string, std::map<std::string, int>> &field_index, const TupleSchema &order_by_schema) {
     field_index_ = &field_index;
     order_by_schema_ = &order_by_schema;
   }

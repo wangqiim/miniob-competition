@@ -78,6 +78,21 @@ RC cartesianExeNode::execute(TupleSet &tuple_set) {
   return RC::SUCCESS;
 }
 
+RC OrderByExeNode::init(Trx *trx, TupleSchema &&order_by_schema,
+        const std::map<std::string, std::map<std::string, int>> &field_index) {
+  trx_ = trx;
+  order_by_schema_ = order_by_schema;
+  field_index_ = &field_index;
+  return RC::SUCCESS;
+}
+
+RC OrderByExeNode::execute(TupleSet &tmp_tuple_set) {
+  TupleSortUtil::set(*field_index_, order_by_schema_);
+  std::vector<Tuple> &tuples = const_cast<std::vector<Tuple> &>(tmp_tuple_set.tuples());
+  std::sort(tuples.begin(), tuples.end(), TupleSortUtil::cmp);
+  return RC::SUCCESS;
+}
+
 RC OutputExeNode::init(Trx *trx, TupleSchema &&output_tuple_schema, TupleSet &&tuple_set,
           const std::map<std::string, std::map<std::string, int>> &field_index) {
   trx_ = trx;

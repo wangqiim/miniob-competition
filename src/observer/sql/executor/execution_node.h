@@ -81,6 +81,22 @@ private:
   TupleSchema output_tuple_schema_; // output schema
 };
 
+// 用于对TupleSet进行排序
+class OrderByExeNode: public ExecutionNode {
+public:
+  OrderByExeNode() = default;
+  ~OrderByExeNode() = default;
+
+  RC init(Trx *trx, TupleSchema &&order_by_schema,
+          const std::map<std::string, std::map<std::string, int>> &field_index);
+
+  RC execute(TupleSet &sorted_tuple_set) override;
+private:
+  Trx *trx_ = nullptr;
+  const std::map<std::string, std::map<std::string, int>> *field_index_;
+  TupleSchema order_by_schema_; //存储需要order by关键字中的field
+};
+
 // 拥有DefaultConditionFilter和AggreDesc的所有按，析构时需要释放内存
 class AggregateExeNode {
 public:

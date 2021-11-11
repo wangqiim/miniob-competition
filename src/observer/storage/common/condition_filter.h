@@ -117,7 +117,7 @@ public:
    * @param rec
    * @return true means match condition, false means failed to match.
    */
-  virtual bool filter(std::vector<Tuple> *tuples) const = 0;
+  virtual bool filter(const Tuple &tuple) const = 0;
 };
 
 class DefaultCartesianFilter : public CartesianFilter {
@@ -126,7 +126,7 @@ public:
   virtual ~DefaultCartesianFilter() = default;
   // tuples中的每个Tuple对应一个table的Tuple，CartesianConDesc.table_index是tuples的下标
   // 每个Tuple中的vector<TupleValue>表示table中的一行数据，CartesianConDesc.value_index是vector<TupleValue>的下标
-  virtual bool filter(std::vector<Tuple> *tuples) const;
+  virtual bool filter(const Tuple &tuple) const override;
 
   RC init(const CartesianConDesc &left, const CartesianConDesc &right, CompOp comp_op);
 
@@ -142,7 +142,7 @@ public:
   virtual ~CompositeCartesianFilter();
 
   RC init(std::vector<DefaultCartesianFilter *> &&filters, bool own_memory=false);
-  virtual bool filter(std::vector<Tuple> *tuples) const;
+  virtual bool filter(const Tuple &tuple) const override;
 
 private:
   std::vector<DefaultCartesianFilter *> filters_;

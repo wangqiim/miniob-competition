@@ -36,9 +36,12 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
+RC create_field_index(const Selects &selects, const char *db, std::map<std::string, std::map<std::string, int>> &field_index);
 RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, SelectExeNode &select_node);
-RC create_cartesian_selection_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, cartesianExeNode &cartesian_exe_node);
+RC create_cartesian_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, 
+                              cartesianExeNode &cartesian_exe_node, const std::map<std::string, std::map<std::string, int>> &field_index);
 RC create_aggregate_executor(Trx *trx, const Selects &selects, const char *db, const char *table_name, AggregateExeNode &aggregate_node);
+RC create_output_executor(Trx *trx, const Selects &selects, const char *db, TupleSet &&tuple_set, OutputExeNode &output_node, const std::map<std::string, std::map<std::string, int>> &field_index);
 RC aggreDesc_check_and_set(Table *table, const Aggregate &aggregate, AggreDesc &aggre_desc);
 
 //! Constructor
@@ -335,13 +338,14 @@ void end_trx_if_need(Session *session, Trx *trx, bool all_right) {
 
 // 这里没有对输入的某些信息做合法性校验，比如查询的列名、where条件中的列名等，没有做必要的合法性校验
 // 需要补充上这一部分. 校验部分也可以放在resolve，不过跟execution放一起也没有关系
+// 流程:selectnode->cartesiannode(如果需要)->orderbynode(如果需要)->aggregatenode(如果需要)->outputnode
 RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_event) {
 
   RC rc = RC::SUCCESS;
   Session *session = session_event->get_client()->session;
   Trx *trx = session->current_trx();
   const Selects &selects = sql->sstr.selection;
-  // 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
+  // 1. 把所有的表和只跟这张表关联的condition都拿出来，生成最底层的select 执行节点
   std::vector<SelectExeNode *> select_nodes;
   for (int i = selects.relation_num - 1; i >= 0; i--) {
     const char *table_name = selects.relations[i];
@@ -363,7 +367,7 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     end_trx_if_need(session, trx, false);
     return RC::SQL_SYNTAX;
   }
-
+  // 执行所有的selectNode,生成每个"表"的结果集
   std::vector<TupleSet> tuple_sets;
   for (SelectExeNode *&node: select_nodes) {
     TupleSet tuple_set;
@@ -379,22 +383,38 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     }
   }
 
-  std::stringstream ss;
-  if (tuple_sets.size() > 1) {
-    // 本次查询了多张表，需要做Cartesian操作
-    cartesianExeNode cartesian_exe_node;
-    rc = create_cartesian_selection_executor(trx, selects, db, std::move(tuple_sets), cartesian_exe_node);
-    if (rc != RC::SUCCESS) {
-      return rc;
-    }
-    TupleSet tuple_set;
-    cartesian_exe_node.execute(tuple_set);
-    tuple_set.print(ss, true);
-  } else {
-    // 当前只查询一张表，直接返回结果即可
-    tuple_sets.front().print(ss);
-  }
 
+  // {table_name: {field: value_index})}
+  std::map<std::string, std::map<std::string, int>> field_index;
+  rc = create_field_index(selects, db, field_index);
+  assert(rc == RC::SUCCESS);
+
+  TupleSet tmp_tuple_set;
+
+  // 2. 如果本次查询了多张表，需要做Cartesian操作，合并成一个TupleSet
+  if (tuple_sets.size() > 1) {
+    cartesianExeNode cartesian_exe_node;
+    rc = create_cartesian_executor(trx, selects, db, std::move(tuple_sets), cartesian_exe_node, field_index);
+    assert(rc == RC::SUCCESS);
+    cartesian_exe_node.execute(tmp_tuple_set);
+  } else {
+    tmp_tuple_set = std::move(tuple_sets.front());
+  }
+  // ----------------------
+  // 3. todo(wq): order-by node
+  // ----------------------
+  // 4. todo(wq): aggregate node
+  // ----------------------
+  // 5. 生成输出tupleset
+  OutputExeNode outputExeNode;
+  rc = create_output_executor(trx, selects, db, std::move(tmp_tuple_set), outputExeNode, field_index);
+  assert(rc == RC::SUCCESS);
+  TupleSet output_tuple_set;
+  outputExeNode.execute(output_tuple_set);
+
+  std::stringstream ss;
+  output_tuple_set.print(ss, true);
+  
   for (SelectExeNode *& tmp_node: select_nodes) {
     delete tmp_node;
   }
@@ -432,26 +452,8 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-  if (selects.relation_num > 1) { // todo(yqs): 多表查询时，先将所有字段都查询出来，在后续做筛选，其实可以按查询条件先筛选，未必需要全部先查出来
-    TupleSchema::from_table(table, schema);
-  } else {
-    for (int i = selects.attr_num - 1; i >= 0; i--) {
-      const RelAttr &attr = selects.attributes[i];
-      if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
-        if (0 == strcmp("*", attr.attribute_name)) {
-          // 列出这张表所有字段
-          TupleSchema::from_table(table, schema);
-          break; // 没有校验，给出* 之后，再写字段的错误
-        } else {
-          // 列出这张表相关字段
-          RC rc = schema_add_field(table, attr.attribute_name, schema);
-          if (rc != RC::SUCCESS) {
-            return rc;
-          }
-        }
-      }
-    }
-  }
+  // 保留全部attr,后续可能用来agg或sort,最后才构造ouput schema
+  TupleSchema::from_table(table, schema);
 
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
   std::vector<DefaultConditionFilter *> condition_filters;
@@ -475,96 +477,34 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
       condition_filters.push_back(condition_filter);
     }
   }
-
-  // 找出仅与该表相关的order-by
-  
-  TupleSchema order_by_schema;
-  for (size_t i = 0; i < selects.order_num; i++) {
-    const RelAttr &attr = selects.order_by[i].attribute;
-    if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
-      RC rc = schema_add_field(table, attr.attribute_name, order_by_schema, selects.order_by[i].order);
-      if (rc != RC::SUCCESS) {
-        return rc;
-      }
-    }
-  }
-  
-  return select_node.init(trx, table, std::move(schema), std::move(condition_filters), std::move(order_by_schema));
+  return select_node.init(trx, table, std::move(schema), std::move(condition_filters));
 }
 
-
-RC create_cartesian_selection_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, cartesianExeNode &cartesian_exe_node) {
-  // {table_name: table}
-  auto table_map = std::make_unique<std::map<std::string, Table*>>();
-  // {table_name: (table_index, {value_name: value_index})}
-  std::map<std::string, std::pair<int, std::map<std::string, int>>> table_value_index;
-  Table *table;
-  for (int table_index = 0; table_index < tuple_sets.size(); table_index++) {
-    TupleSet &tuple_set = tuple_sets[table_index];
-    assert(!tuple_set.get_schema().fields().empty());
-    const char *table_name = tuple_set.get_schema().field(0).table_name();
-    table = DefaultHandler::DefaultHandler::get_default().find_table(db, table_name);
-    if (nullptr == table) {
-      LOG_WARN("No such table [%s] in db [%s]", table_name, db);
-      return RC::SCHEMA_TABLE_NOT_EXIST;
+RC create_field_index(const Selects &selects, const char *db, 
+                      std::map<std::string, std::map<std::string, int>> &field_index) {
+  int fields_num = 0;
+  for (int i = selects.relation_num - 1; i >= 0; --i) {
+    field_index[selects.relations[i]] = {};
+    Table *table = DefaultHandler::get_default().find_table(db, selects.relations[i]);
+    for (int j = table->table_meta().sys_field_num(); j < table->table_meta().field_num(); j++) {
+      field_index[selects.relations[i]][table->table_meta().field(j)->name()] = fields_num + j - table->table_meta().sys_field_num();
     }
-    table_map->emplace(table_name, table);
-    std::map<std::string, int> value_index_map;
-    for (int value_index = 0; value_index < tuple_set.get_schema().fields().size(); value_index++) {
-      const TupleField & tuple_field = tuple_set.get_schema().field(value_index);
-      value_index_map.emplace(tuple_field.field_name(), value_index);
-    }
-    table_value_index.emplace(table_name, std::pair<int, std::map<std::string, int>>{table_index, value_index_map});
+    fields_num += table->table_meta().field_num() - table->table_meta().sys_field_num();
   }
-  // 构造多表查询返回schema
-  TupleSchema output_schema;
-  if (selects.attr_num == 1 // select * from t1, t2
-    && nullptr == selects.attributes[0].relation_name
-    && strcmp("*", selects.attributes[0].attribute_name) == 0 ) {
-    for (int i = selects.relation_num -1; i >= 0; --i) {
-      auto find_table = table_map->find(selects.relations[i]);
-      TupleSchema::from_table(find_table->second, output_schema);
-    }
-  } else {
-    for (int i = selects.attr_num - 1; i >= 0; i--) {
-      const RelAttr &attr = selects.attributes[i];
-      // todo(yqs): 前置校验项，对于多表查询，必须指定relation_name
-      assert(nullptr != attr.relation_name);
-      auto find_table = table_map->find(attr.relation_name);
-      // todo(yqs): 前置校验项，relation_name必须存在，且必须存在于selects.relations
-      assert(find_table != table_map->end());
-      if (0 == strcmp("*", attr.attribute_name)) {
-        TupleSchema::from_table(find_table->second, output_schema);
-      } else {
-        RC rc = schema_add_field(find_table->second, attr.attribute_name, output_schema);
-        if (rc != RC::SUCCESS) {
-          return rc;
-        }
-      }
-    }
-  }
+  return RC::SUCCESS;
+}
 
+RC create_cartesian_executor(Trx *trx, const Selects &selects, const char *db, std::vector<TupleSet> &&tuple_sets, 
+                            cartesianExeNode &cartesian_exe_node, const std::map<std::string, std::map<std::string, int>> &field_index) {
   // 找出仅与此表相关的过滤条件, 或者都是值的过滤条件
   std::vector<DefaultCartesianFilter *> condition_filters;
   for (size_t i = 0; i < selects.condition_num; i++) {
     const Condition &condition = selects.conditions[i];
     if (condition.left_is_attr == 1 && condition.right_is_attr == 1) { // 两边都是属性的condition才需要做联表查询
       // left condition
-      auto find_left_table = table_value_index.find(condition.left_attr.relation_name);
-      assert(find_left_table != table_value_index.end());
-      int left_table_index = find_left_table->second.first;
-      auto find_left_value = find_left_table->second.second.find(condition.left_attr.attribute_name);
-      assert(find_left_value != find_left_table->second.second.end());
-      int left_value_index = find_left_value->second;
-      CartesianConDesc left_cond{left_table_index, left_value_index};
+      CartesianConDesc left_cond{-1, field_index.at(condition.left_attr.relation_name).at(condition.left_attr.attribute_name)};
       // right condition
-      auto find_right_table = table_value_index.find(condition.right_attr.relation_name);
-      assert(find_right_table != table_value_index.end());
-      int right_table_index = find_right_table->second.first;
-      auto find_right_value = find_right_table->second.second.find(condition.right_attr.attribute_name);
-      assert(find_right_value != find_right_table->second.second.end());
-      int right_value_index = find_right_value->second;
-      CartesianConDesc right_cond{right_table_index, right_value_index};
+      CartesianConDesc right_cond{-1, field_index.at(condition.right_attr.relation_name).at(condition.right_attr.attribute_name)};
       // build condition
       auto *condition_filter = new DefaultCartesianFilter();
       condition_filter->init(left_cond, right_cond, condition.comp);
@@ -575,40 +515,80 @@ RC create_cartesian_selection_executor(Trx *trx, const Selects &selects, const c
   auto *condition_filter = new CompositeCartesianFilter();
   condition_filter->init(std::move(condition_filters), condition_filters.size());
 
-  // 构造order_by schema
-  TupleSchema order_by_schema;
-  std::map<std::string, std::map<std::string, int>> field_index;
-  if (selects.order_num != 0) {
-    for (size_t i = 0; i < selects.order_num; i++) {
-      const RelAttr &attr = selects.order_by[i].attribute;
-      table = DefaultHandler::DefaultHandler::get_default().find_table(db, attr.relation_name);
-      if (nullptr == table) {
-        LOG_ERROR("No such table [%s] in db [%s]", attr.relation_name, db);
-        return RC::SCHEMA_TABLE_NOT_EXIST;
-      }
-      RC rc = schema_add_field(table, attr.attribute_name, order_by_schema, selects.order_by[i].order);
-      if (rc != RC::SUCCESS) {
-        return rc;
-      }
-    }
-    int fields_num = 0;
-    for (int i = selects.relation_num - 1; i >= 0; --i) {
-      field_index[selects.relations[i]] = {};
-      Table *t = DefaultHandler::get_default().find_table(db, selects.relations[i]);
-      for (int j = t->table_meta().sys_field_num(); j < t->table_meta().field_num(); j++) {
-        field_index[selects.relations[i]][t->table_meta().field(j)->name()] = fields_num + j - t->table_meta().sys_field_num();
-      }
-      fields_num += t->table_meta().field_num() - t->table_meta().sys_field_num();
-    }
+  Table *table = nullptr;
+  TupleSchema cartesian_schema;
+  // 注意：这里构造cartesian_schema的表的顺序一定要和创建selectNode时候遍历表的顺序一致!!!!!
+  for (int i = selects.relation_num - 1; i >= 0; i--) {
+    table = DefaultHandler::DefaultHandler::get_default().find_table(db, selects.relations[i]);
+    assert(table != nullptr);
+    TupleSchema::from_table(table, cartesian_schema);
   }
   
-  return cartesian_exe_node.init(trx, std::move(tuple_sets),
-                            std::move(output_schema),
-                            condition_filter,
-                            std::move(table_value_index),
-                            std::move(field_index),
-                            std::move(order_by_schema));
+  return cartesian_exe_node.init(trx, std::move(tuple_sets), condition_filter, std::move(cartesian_schema));
 }
+
+RC create_output_executor(Trx *trx, const Selects &selects, const char *db,
+                          TupleSet &&tuple_set, OutputExeNode &output_node,
+                          const std::map<std::string, std::map<std::string, int>> &field_index) {
+  // 1. 构造结果返回schema  
+  TupleSchema output_schema;
+  Table *table;
+  std::map<std::string, Table*> table_map;
+  for (int i = 0; i < selects.relation_num; i++) {
+    table = DefaultHandler::DefaultHandler::get_default().find_table(db, selects.relations[i]);
+    assert(table != nullptr);
+    table_map[selects.relations[i]] = table;
+  }
+  
+  if (selects.relation_num == 1) {
+    // 构造单表查询返回schema
+    const char *table_name = selects.relations[0];
+    for (int i = selects.attr_num - 1; i >= 0; i--) {
+      const RelAttr &attr = selects.attributes[i];
+      if (nullptr == attr.relation_name || 0 == strcmp(table_name, attr.relation_name)) {
+        if (0 == strcmp("*", attr.attribute_name)) {
+          // 列出这张表所有字段
+          TupleSchema::from_table(table, output_schema);
+          break; // 没有校验，给出* 之后，再写字段的错误
+        } else {
+          // 列出这张表相关字段
+          RC rc = schema_add_field(table, attr.attribute_name, output_schema);
+          if (rc != RC::SUCCESS) {
+            return rc;
+          }
+        }
+      }
+    }
+  } else {
+    // 构造多表查询返回schema
+    if (selects.attr_num == 1 // select * from t1, t2
+      && nullptr == selects.attributes[0].relation_name
+      && strcmp("*", selects.attributes[0].attribute_name) == 0 ) {
+      for (int i = selects.relation_num -1; i >= 0; --i) {
+        TupleSchema::from_table(table_map[selects.relations[i]], output_schema);
+      }
+    } else {
+      for (int i = selects.attr_num - 1; i >= 0; i--) {
+        const RelAttr &attr = selects.attributes[i];
+        // todo(yqs): 前置校验项，对于多表查询，必须指定relation_name
+        assert(nullptr != attr.relation_name);
+        auto find_table = table_map.find(attr.relation_name);
+        // todo(yqs): 前置校验项，relation_name必须存在，且必须存在于selects.relations
+        assert(find_table != table_map.end());
+        if (0 == strcmp("*", attr.attribute_name)) {
+          TupleSchema::from_table(find_table->second, output_schema);
+        } else {
+          RC rc = schema_add_field(find_table->second, attr.attribute_name, output_schema);
+          if (rc != RC::SUCCESS) {
+            return rc;
+          }
+        }
+      }
+    }
+  }
+  return output_node.init(trx, std::move(output_schema), std::move(tuple_set), field_index);
+}
+
 RC ExecuteStage::do_aggregate(const char *db, Query *sql, SessionEvent *session_event) {
 
   RC rc = RC::SUCCESS;

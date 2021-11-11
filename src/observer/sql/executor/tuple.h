@@ -208,21 +208,13 @@ private:
 
 class TupleRecordConverter {
 public:
-  TupleRecordConverter(Table *table, TupleSet &tuple_set, TupleSchema &order_by_schema);
+  TupleRecordConverter(Table *table, TupleSet &tuple_set);
 
-  // 如果order_by_schema非空，则先将数据注入到tmp_tuple_set_中用来后续牌序
   void add_record(const char *record);
 
-  // 如果必要，则将所有数据进行牌序，并且注入到tuple_set_中 
-  void sort();
 private:
   Table *table_;
   TupleSet &tuple_set_;
-
-  bool need_sort_;
-  TupleSchema all_tuple_schema_;
-  TupleSet    tmp_tuple_set_; //临时tmp_tuple_set_用来牌序
-  TupleSchema &order_by_schema_;
 };
 
 struct AggreDesc {

@@ -334,9 +334,9 @@ RC DefaultCartesianFilter::init(const CartesianConDesc &left, const CartesianCon
 }
 
 
-bool DefaultCartesianFilter::filter(std::vector<Tuple> *tuples) const {
-  std::shared_ptr<TupleValue> left_value = (*tuples)[left_.table_index].get_pointer(left_.value_index);
-  std::shared_ptr<TupleValue> right_value = (*tuples)[right_.table_index].get_pointer(right_.value_index);
+bool DefaultCartesianFilter::filter(const Tuple &tuple) const {
+  std::shared_ptr<TupleValue> left_value = tuple.get_pointer(left_.value_index);
+  std::shared_ptr<TupleValue> right_value = tuple.get_pointer(right_.value_index);
   if (left_value->Type() == AttrType::UNDEFINED || right_value->Type() == AttrType::UNDEFINED) {
     return false;
   }
@@ -358,12 +358,9 @@ RC CompositeCartesianFilter::init(std::vector<DefaultCartesianFilter *> &&filter
   return RC::SUCCESS;
 }
 
-bool CompositeCartesianFilter::filter(std::vector<Tuple> *tuples) const {
-  if (tuples->empty()) {
-    return false;
-  }
+bool CompositeCartesianFilter::filter(const Tuple &tuple) const {
   for (const auto & filter : filters_) {
-    if (!filter->filter(tuples)) {
+    if (!filter->filter(tuple)) {
       return false;
     }
   }

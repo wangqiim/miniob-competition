@@ -30,12 +30,11 @@ SelectExeNode::~SelectExeNode() {
 }
 
 RC
-SelectExeNode::init(Trx *trx, Table *table, TupleSchema &&tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters, TupleSchema &&order_by_schema) {
+SelectExeNode::init(Trx *trx, Table *table, TupleSchema &&tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters) {
   trx_ = trx;
   table_ = table;
   tuple_schema_ = tuple_schema;
   condition_filters_ = std::move(condition_filters);
-  order_by_schema_ = order_by_schema;
   return RC::SUCCESS;
 }
 
@@ -49,81 +48,60 @@ RC SelectExeNode::execute(TupleSet &tuple_set) {
 
   tuple_set.clear();
   tuple_set.set_schema(tuple_schema_);
-  TupleRecordConverter converter(table_, tuple_set, order_by_schema_);
+  TupleRecordConverter converter(table_, tuple_set);
   RC rc = table_->scan_record(trx_, &condition_filter, -1, (void *)&converter, record_reader);
-  if (!order_by_schema_.empty()) {
-    converter.sort();
-  }
   return rc;
 }
 
-RC cartesianExeNode::init(Trx *trx, std::vector<TupleSet> &&tuple_sets,
-                     TupleSchema &&output_tuple_schema,
-                     CompositeCartesianFilter *condition_filter,
-                     std::map<std::string, std::pair<int, std::map<std::string, int>>> &&table_value_index,
-                     std::map<std::string, std::map<std::string, int>> &&field_index,
-                     TupleSchema &&order_tuple_schema) {
+RC cartesianExeNode::init(Trx *trx, std::vector<TupleSet> &&tuple_sets, CompositeCartesianFilter *condition_filter, TupleSchema &&cartesian_schema) {
   trx_ = trx;
   tuple_sets_ = std::move(tuple_sets);
   condition_filter_ = condition_filter;
-  output_tuple_schema_ = output_tuple_schema;
-  table_value_index_ = std::move(table_value_index);
-  field_index_ = std::move(field_index); // 用于order-by
-  order_by_tuple_schema_ = order_tuple_schema; //用于order-by
+  cartesian_schema_ = cartesian_schema;
   return RC::SUCCESS;
 }
 
 RC cartesianExeNode::execute(TupleSet &tuple_set) {
-  tuple_set.set_schema(output_tuple_schema_);
-  if (!order_by_tuple_schema_.empty()) {
-    for (auto iter = TupleSetDescartesIterator(&tuple_sets_); !iter.End(); ++iter) {
-      std::unique_ptr<std::vector<Tuple>> tuples = *iter;
-      if (condition_filter_->filter(tuples.get())) {
-        Tuple tmp_tuple;
-        for (auto &tuple : *tuples) {
-          for (int i = 0; i < tuple.size(); i++) {
-            tmp_tuple.add(tuple.get_pointer(i));
-          }
-        }
-        tmp_tuple_set_.add(std::move(tmp_tuple));
-      }
-    }
-
-    TupleSortUtil::set(field_index_, order_by_tuple_schema_);
-    std::vector<Tuple> &tuples = const_cast<std::vector<Tuple> &>(tmp_tuple_set_.tuples());
-    std::sort(tuples.begin(), tuples.end(), TupleSortUtil::cmp);
-
-    // tmp_tuple_set -> output_tuple_schema
-    for (const Tuple &tuple : tuples) {
-      Tuple output_tuple;
-      for(const auto & field :output_tuple_schema_.fields()) {
-        int value_index = field_index_[field.table_name()][field.field_name()];
-        output_tuple.add(tuple.get_pointer(value_index));
-      }
-      tuple_set.add(std::move(output_tuple));
-    }
-    return RC::SUCCESS;
-  }
-  // 不需要经过tmp_tuple进行排序
+  tuple_set.set_schema(cartesian_schema_);
   for (auto iter = TupleSetDescartesIterator(&tuple_sets_); !iter.End(); ++iter) {
     std::unique_ptr<std::vector<Tuple>> tuples = *iter;
-    if (condition_filter_->filter(tuples.get())) {
-      Tuple validate_tuple;
-      for(const auto & field :output_tuple_schema_.fields()) {
-        auto find_table_index = table_value_index_.find(field.table_name());
-        assert(find_table_index != table_value_index_.end());
-        int table_index = find_table_index->second.first;
-        std::map<std::string, int> &value_index_map = find_table_index->second.second;
-        auto find_value_index = value_index_map.find(field.field_name());
-        assert(find_value_index != value_index_map.end());
-        int value_index = find_value_index->second;
-        validate_tuple.add(tuples->at(table_index).get_pointer(value_index));
+    Tuple tmp_tuple;
+    for (auto &tuple : *tuples) {
+      for (int i = 0; i < tuple.size(); i++) {
+        tmp_tuple.add(tuple.get_pointer(i));
       }
-      tuple_set.add(std::move(validate_tuple));
+    }
+    if (condition_filter_->filter(tmp_tuple)) {
+      tuple_set.add(std::move(tmp_tuple));
     }
   }
   return RC::SUCCESS;
 }
+
+RC OutputExeNode::init(Trx *trx, TupleSchema &&output_tuple_schema, TupleSet &&tuple_set,
+          const std::map<std::string, std::map<std::string, int>> &field_index) {
+  trx_ = trx;
+  output_tuple_schema_ = output_tuple_schema;
+  tuple_set_ = std::move(tuple_set);
+  field_index_ = &field_index;
+  return RC::SUCCESS;
+}
+
+RC OutputExeNode::execute(TupleSet &output_tuple_set) {
+  output_tuple_set.set_schema(output_tuple_schema_);
+  std::vector<Tuple> &tuples = const_cast<std::vector<Tuple> &>(tuple_set_.tuples());
+  // tmp_tuple_set -> output_tuple_schema
+  for (const Tuple &tuple : tuples) {
+    Tuple output_tuple;
+    for(const auto & field : output_tuple_schema_.fields()) {
+      int value_index = field_index_->at(field.table_name()).at(field.field_name());
+      output_tuple.add(tuple.get_pointer(value_index));
+    }
+    output_tuple_set.add(std::move(output_tuple));
+  }
+  return RC::SUCCESS;
+}
+
 AggregateExeNode::~AggregateExeNode() {
   for (DefaultConditionFilter * &filter : condition_filters_) {
     delete filter;

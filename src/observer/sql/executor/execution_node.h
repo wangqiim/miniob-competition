@@ -36,44 +36,49 @@ public:
   SelectExeNode();
   virtual ~SelectExeNode();
 
-  RC init(Trx *trx, Table *table, TupleSchema && tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters, TupleSchema &&order_by_schema);
+  RC init(Trx *trx, Table *table, TupleSchema && tuple_schema, std::vector<DefaultConditionFilter *> &&condition_filters);
 
   RC execute(TupleSet &tuple_set) override;
 private:
   Trx *trx_ = nullptr;
   Table  * table_;
-  TupleSchema  tuple_schema_; // output schema
-  TupleSchema  order_by_schema_;
+  TupleSchema  tuple_schema_; // all attribute schema
   std::vector<DefaultConditionFilter *> condition_filters_;
 };
 
+// 用于生成全字段笛卡尔积
 class cartesianExeNode : public ExecutionNode {
 public:
   cartesianExeNode() = default;
-  ~cartesianExeNode() {
-    delete condition_filter_;
-  }
+  ~cartesianExeNode() { delete condition_filter_; }
 
   RC init(Trx *trx, std::vector<TupleSet> &&tuple_sets,
-          TupleSchema &&output_tuple_schema,
-          CompositeCartesianFilter *condition_filter,
-          std::map<std::string, std::pair<int, std::map<std::string, int>>> &&table_value_index,
-          std::map<std::string, std::map<std::string, int>> &&field_index,
-          TupleSchema &&order_tuple_schema);
+          CompositeCartesianFilter *condition_filter, TupleSchema &&cartesian_schema);
 
   RC execute(TupleSet &tuple_set) override;
 
 private:
   Trx *trx_ = nullptr;
-  std::vector<TupleSet> tuple_sets_;
+  std::vector<TupleSet> tuple_sets_; // 多表的tuple_sets,用来迭代生成笛卡尔积
   CompositeCartesianFilter *condition_filter_;
-  TupleSchema  output_tuple_schema_;
-  // {table_name: (table_index, {value_name: value_index})}
-  std::map<std::string, std::pair<int, std::map<std::string, int>>> table_value_index_;
+  TupleSchema cartesian_schema_;
+};
 
-  std::map<std::string, std::map<std::string, int>> field_index_;
-  TupleSet tmp_tuple_set_; // 用来排序
-  TupleSchema  order_by_tuple_schema_;
+// 用于生成最终输出字段和记录
+class OutputExeNode: public ExecutionNode {
+public:
+  OutputExeNode() = default;
+  ~OutputExeNode() = default;
+
+  RC init(Trx *trx, TupleSchema && output_tuple_schema, TupleSet &&tuple_set,
+          const std::map<std::string, std::map<std::string, int>> &field_index);
+
+  RC execute(TupleSet &output_tuple_set) override;
+private:
+  Trx *trx_ = nullptr;
+  TupleSet tuple_set_;
+  const std::map<std::string, std::map<std::string, int>> *field_index_;
+  TupleSchema output_tuple_schema_; // output schema
 };
 
 // 拥有DefaultConditionFilter和AggreDesc的所有按，析构时需要释放内存

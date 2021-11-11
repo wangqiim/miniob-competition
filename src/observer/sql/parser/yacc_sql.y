@@ -133,6 +133,7 @@ ParserContext *get_context(yyscan_t scanner)
 		ORDER
 		BY
 		ASC
+		GROUP
 
 %union {
   struct _Attr *attr;
@@ -404,7 +405,7 @@ update:			/*  update 语句的语法解析树*/
 		}
     ;
 select:				/*  select 语句的语法解析树*/
-    SELECT select_attr FROM ID rel_list inner_join_list where order_by SEMICOLON
+    SELECT select_attr FROM ID rel_list inner_join_list where group_by order_by SEMICOLON
 		{
 			// CONTEXT->ssql->sstr.selection.relations[CONTEXT->from_length++]=$4;
 			selects_append_relation(&CONTEXT->ssql->sstr.selection, $4);
@@ -446,7 +447,7 @@ select_attr:
 			relation_attr_init(&attr, $1, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
 		}
-	| aggre_func aggre_list
+	| aggre_func attr_list
     ;
 
 attr_list:
@@ -470,7 +471,8 @@ attr_list:
 			relation_attr_init(&attr, $2, "*");
 			selects_append_attribute(&CONTEXT->ssql->sstr.selection, &attr);
     	}
-  	;
+  	| COMMA aggre_func attr_list
+	;
 
 aggre_func:
 	aggre_type LBRACE value RBRACE {
@@ -496,11 +498,6 @@ aggre_func:
 		relation_aggre_init(&aggre, CONTEXT->aggreType, 1, NULL, "*", NULL);
 		selects_append_aggregate(&CONTEXT->ssql->sstr.selection, &aggre);
 	}
-	;
-
-aggre_list:
-	/* empty */
-	| COMMA aggre_func aggre_list
 	;
 
 aggre_type:
@@ -830,6 +827,30 @@ order_item_list:
 	/* empty */
 	| COMMA order_item order_item_list
 	;
+
+group_by:
+	/* empty */
+	| GROUP BY group_item group_item_list
+	;
+
+group_item:
+	ID {
+		RelAttr attr;
+		relation_attr_init(&attr, NULL, $1);
+		selects_append_group(&CONTEXT->ssql->sstr.selection, &attr);
+	}
+	| ID DOT ID {
+		RelAttr attr;
+		relation_attr_init(&attr, $1, $3);
+		selects_append_group(&CONTEXT->ssql->sstr.selection, &attr);
+	}
+	;
+
+group_item_list:
+	/* empty */
+	| COMMA group_item group_item_list
+	;
+
 
 load_data:
 		LOAD DATA INFILE SSS INTO TABLE ID SEMICOLON

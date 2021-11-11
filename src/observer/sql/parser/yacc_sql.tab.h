@@ -111,90 +111,23 @@ extern int yydebug;
     ORDER = 312,                   /* ORDER  */
     BY = 313,                      /* BY  */
     ASC = 314,                     /* ASC  */
-    NUMBER = 315,                  /* NUMBER  */
-    FLOAT = 316,                   /* FLOAT  */
-    ID = 317,                      /* ID  */
-    PATH = 318,                    /* PATH  */
-    SSS = 319,                     /* SSS  */
-    STAR = 320,                    /* STAR  */
-    STRING_V = 321                 /* STRING_V  */
+    GROUP = 315,                   /* GROUP  */
+    NUMBER = 316,                  /* NUMBER  */
+    FLOAT = 317,                   /* FLOAT  */
+    ID = 318,                      /* ID  */
+    PATH = 319,                    /* PATH  */
+    SSS = 320,                     /* SSS  */
+    STAR = 321,                    /* STAR  */
+    STRING_V = 322                 /* STRING_V  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
-/* Token kinds.  */
-#define YYEOF 0
-#define YYerror 256
-#define YYUNDEF 257
-#define SEMICOLON 258
-#define CREATE 259
-#define DROP 260
-#define TABLE 261
-#define TABLES 262
-#define UNIQUE 263
-#define INDEX 264
-#define SELECT 265
-#define DESC 266
-#define SHOW 267
-#define SYNC 268
-#define INSERT 269
-#define DELETE 270
-#define UPDATE 271
-#define LBRACE 272
-#define RBRACE 273
-#define COMMA 274
-#define TRX_BEGIN 275
-#define TRX_COMMIT 276
-#define TRX_ROLLBACK 277
-#define INT_T 278
-#define STRING_T 279
-#define FLOAT_T 280
-#define DATE_T 281
-#define HELP 282
-#define EXIT 283
-#define DOT 284
-#define INTO 285
-#define VALUES 286
-#define FROM 287
-#define WHERE 288
-#define INNER 289
-#define JOIN 290
-#define AND 291
-#define SET 292
-#define ON 293
-#define LOAD 294
-#define DATA 295
-#define INFILE 296
-#define MAX_T 297
-#define MIN_T 298
-#define AVG_T 299
-#define SUM_T 300
-#define COUNT_T 301
-#define EQ 302
-#define LT 303
-#define GT 304
-#define LE 305
-#define GE 306
-#define NE 307
-#define NOT_T 308
-#define NULL_T 309
-#define NULLABLE_T 310
-#define IS_T 311
-#define ORDER 312
-#define BY 313
-#define ASC 314
-#define NUMBER 315
-#define FLOAT 316
-#define ID 317
-#define PATH 318
-#define SSS 319
-#define STAR 320
-#define STRING_V 321
 
 /* Value type.  */
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 137 "yacc_sql.y"
+#line 138 "yacc_sql.y"
 
   struct _Attr *attr;
   struct _Condition *condition1;
@@ -204,7 +137,7 @@ union YYSTYPE
   float floats;
 	char *position;
 
-#line 208 "yacc_sql.tab.h"
+#line 141 "yacc_sql.tab.h"
 
 };
 typedef union YYSTYPE YYSTYPE;

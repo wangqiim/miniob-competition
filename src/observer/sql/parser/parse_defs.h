@@ -116,6 +116,8 @@ typedef struct Selects_ {
   Condition conditions[MAX_NUM];    // conditions in Where clause
   size_t    order_num;
   OrderBy   order_by[MAX_NUM];
+  size_t    group_num;
+  RelAttr   group_bys[MAX_NUM];
 } Selects;
 
 typedef struct {
@@ -258,6 +260,7 @@ void selects_append_aggregate(Selects *selects, Aggregate *aggregate);
 void selects_append_relation(Selects *selects, const char *relation_name);
 void selects_append_conditions(Selects *selects, Condition conditions[], size_t condition_num);
 void selects_append_order(Selects *selects, RelAttr *rel_attr, int order);
+void selects_append_group(Selects *selects, RelAttr *rel_attr);
 void selects_destroy(Selects *selects);
 void selects_append_joins(Selects *selects, Join joins[], size_t join_num);
 void join_init(Join *join, JoinType join_type, const char *relation_name, Condition conditions[], size_t condition_num);

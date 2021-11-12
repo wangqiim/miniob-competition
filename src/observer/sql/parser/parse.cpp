@@ -136,6 +136,23 @@ void attr_info_destroy(AttrInfo *attr_info) {
   attr_info->name = nullptr;
 }
 
+void join_init(Join *join, JoinType join_type, const char *relation_name, Condition conditions[], size_t condition_num) {
+  join->join_type = join_type;
+  for(size_t i = 0; i < condition_num; i++) {
+    join->conditions[i] = conditions[i];
+  }
+  join->condition_num = condition_num;
+  join->table_name = strdup(relation_name);
+}
+
+void join_destroy(Join *join) {
+  for(size_t i = 0; i < join->condition_num; i++) {
+    condition_destroy(&(join->conditions[i]));
+  }
+  free(join->table_name);
+  join->table_name = nullptr;
+}
+
 void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr) {
   selects->attributes[selects->attr_num++] = *rel_attr;
@@ -198,21 +215,17 @@ void selects_destroy(Selects *selects) {
     relation_attr_destroy(&selects->group_bys[i]);
   }
   selects->group_num = 0;
+
+  for (size_t i = 0; i < selects->join_num; i++) {
+    join_destroy(&(selects->joins[i]));
+  }
+  selects->join_num = 0;
 }
 
 void selects_append_joins(Selects *selects, Join joins[], size_t join_num) {
   for (size_t i = 0; i < join_num; i++) {
     selects->joins[selects->join_num++] = joins[i];
   }
-}
-
-void join_init(Join *join, JoinType join_type, const char *relation_name, Condition conditions[], size_t condition_num) {
-  join->join_type = join_type;
-  for(size_t i = 0; i < condition_num; i++) {
-    join->conditions[i] = conditions[i];
-  }
-  join->condition_num = condition_num;
-  join->table_name = strdup(relation_name);
 }
 
 void inserts_init(Inserts *inserts, const char *relation_name) {

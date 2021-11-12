@@ -254,6 +254,9 @@ void condition_destroy(Condition *condition);
 void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length, int nullable);
 void attr_info_destroy(AttrInfo *attr_info);
 
+void join_init(Join *join, JoinType join_type, const char *relation_name, Condition conditions[], size_t condition_num);
+void join_destroy(Join *join);
+
 void selects_init(Selects *selects, ...);
 void selects_append_attribute(Selects *selects, RelAttr *rel_attr);
 void selects_append_aggregate(Selects *selects, Aggregate *aggregate);
@@ -261,9 +264,8 @@ void selects_append_relation(Selects *selects, const char *relation_name);
 void selects_append_conditions(Selects *selects, Condition conditions[], size_t condition_num);
 void selects_append_order(Selects *selects, RelAttr *rel_attr, int order);
 void selects_append_group(Selects *selects, RelAttr *rel_attr);
-void selects_destroy(Selects *selects);
 void selects_append_joins(Selects *selects, Join joins[], size_t join_num);
-void join_init(Join *join, JoinType join_type, const char *relation_name, Condition conditions[], size_t condition_num);
+void selects_destroy(Selects *selects);
 
 void inserts_init(Inserts *inserts, const char *relation_name);
 void inserts_destroy(Inserts *inserts);

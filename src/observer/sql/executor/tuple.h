@@ -131,7 +131,7 @@ public:
 
   void clear() { fields_.clear(); }
 
-  void print(std::ostream &os, bool multi_table = false) const;
+  void print(std::ostream &os, bool multi_table = false, bool endl = true) const;
 
   static void from_table(const Table *table, TupleSchema &schema);
   static void from_table(const std::vector<Table*> &tables, TupleSchema &schema);

@@ -149,9 +149,8 @@ int TupleSchema::index_of_field(const char *table_name, const char *field_name) 
   return -1;
 }
 
-void TupleSchema::print(std::ostream &os, bool multi_table) const {
+void TupleSchema::print(std::ostream &os, bool multi_table, bool endl) const {
   if (fields_.empty()) {
-    os << "No schema";
     return;
   }
 
@@ -166,7 +165,13 @@ void TupleSchema::print(std::ostream &os, bool multi_table) const {
   if (multi_table) {
     os << fields_.back().table_name() << ".";
   }
-  os << fields_.back().field_name() << std::endl;
+  os << fields_.back().field_name();
+
+  if (endl) {
+    os << std::endl;
+  } else {
+    os << " | ";
+  }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -200,7 +205,8 @@ void TupleSet::clear() {
 void TupleSet::print(std::ostream &os, bool multi_table) const {
   if (schema_.fields().empty()) {
     LOG_WARN("Got empty schema");
-    return;
+    // 聚集函数的表头不用这个schema，所以可能出现schema为空的情况
+    // return;
   }
 
   schema_.print(os, multi_table);

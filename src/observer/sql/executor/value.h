@@ -30,6 +30,12 @@ public:
   virtual void to_string(std::ostream &os) const = 0;
   virtual int compare(const TupleValue &other) const = 0;
 
+  /* 只有floatValue会用到 */
+  virtual void plus(float val) = 0;
+  /* 只有floatValue会用到 */
+  virtual float value() = 0;
+  
+
   AttrType Type() const { return type_;}
   void SetType(AttrType type) { type_ = type; }
 private:
@@ -51,6 +57,8 @@ public:
     return value_ - int_other.value_;
   }
 
+  void plus(float val) override { value_ += val; }
+  float value() override { return value_; }
 private:
   int value_;
 };
@@ -62,7 +70,7 @@ public:
   }
 
   // https://github.com/wangqiim/miniob/issues/2
-  // TODO(wq): 输出需要格式化
+  // 输出需要格式化
   void to_string(std::ostream &os) const override {
     char s[20] = {0};
     sprintf(s, "%.2f", value_);
@@ -93,6 +101,10 @@ public:
     }
     return 0;
   }
+
+  void plus(float val) override { value_ += val; }
+  float value() override { return value_; }
+
 private:
   float value_;
 };
@@ -113,6 +125,9 @@ public:
     const StringValue &string_other = (const StringValue &)other;
     return strcmp(value_.c_str(), string_other.value_.c_str());
   }
+  
+  void plus(float val) override { assert(false); }
+  float value() override { assert(false); }
 private:
   std::string value_;
 };
@@ -132,6 +147,9 @@ public:
     assert(false);
     return -1;
   }
+
+  void plus(float val) override { assert(false); }
+  float value() override { assert(false); }
 };
 
 

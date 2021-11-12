@@ -116,35 +116,3 @@ RC OutputExeNode::execute(TupleSet &output_tuple_set) {
   }
   return RC::SUCCESS;
 }
-
-AggregateExeNode::~AggregateExeNode() {
-  for (DefaultConditionFilter * &filter : condition_filters_) {
-    delete filter;
-  }
-  for (AggreDesc * &aggre : aggres_) {
-    delete aggre;
-  }
-  condition_filters_.clear();
-  aggres_.clear();
-}
-
-RC AggregateExeNode::init(Trx *trx, Table *table, std::vector<AggreDesc *> &&aggre_descs, std::vector<DefaultConditionFilter *> &&condition_filters) {
-  trx_ = trx;
-  table_ = table;
-  aggres_ = aggre_descs;
-  condition_filters_ = std::move(condition_filters);
-  return RC::SUCCESS;
-}
-
-void aggre_reader(const char *data, void *context) {
-  TupleAggregateUtil *aggregater = (TupleAggregateUtil *)context;
-  aggregater->aggregate(data);
-}
-
-RC AggregateExeNode::execute(AggreSet &aggre_set) {
-  CompositeConditionFilter condition_filter;
-  condition_filter.init((const ConditionFilter **)condition_filters_.data(), condition_filters_.size());
-
-  TupleAggregateUtil aggregateUtil(table_, aggres_, aggre_set);
-  return table_->scan_record(trx_, &condition_filter, -1, (void *)&aggregateUtil, aggre_reader);
-}

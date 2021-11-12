@@ -95,8 +95,8 @@ public:
   TupleSchema() = default;
   ~TupleSchema() = default;
 
-  void add(AttrType type, const char *table_name, const char *field_name, int order);
-  void add_if_not_exists(AttrType type, const char *table_name, const char *field_name, int order);
+  void add(AttrType type, const char *table_name, const char *field_name, int order=0);
+  void add_if_not_exists(AttrType type, const char *table_name, const char *field_name, int order=0);
   // void merge(const TupleSchema &other);
   void append(const TupleSchema &other);
 

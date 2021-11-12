@@ -91,6 +91,8 @@ void TupleSchema::from_table(const Table *table, TupleSchema &schema) {
 
 void TupleSchema::add(AttrType type, const char *table_name, const char *field_name, int order) {
   fields_.emplace_back(type, table_name, field_name, order);
+}
+
 void TupleSchema::from_table(const std::vector<Table*>& tables, TupleSchema &schema) {
   for (const auto &t : tables) {
     from_table(t, schema);
@@ -101,10 +103,6 @@ void TupleSchema::schema_add_field(Table *table, const char *field_name, TupleSc
   const FieldMeta *field_meta = table->table_meta().field(field_name);
   assert(nullptr != field_meta);
   schema.add_if_not_exists(field_meta->type(), table->name(), field_meta->name());
-}
-
-void TupleSchema::add(AttrType type, const char *table_name, const char *field_name) {
-  fields_.emplace_back(type, table_name, field_name);
 }
 
 void TupleSchema::add_if_not_exists(AttrType type, const char *table_name, const char *field_name, int order) {

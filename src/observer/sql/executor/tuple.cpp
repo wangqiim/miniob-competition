@@ -180,6 +180,9 @@ void TupleSchema::print(std::ostream &os, bool multi_table) const {
     } else {
       // 继续打印aggregate头
       os << " | ";
+    }
+  }
+  if (!agg_descs_.empty()) {
       int aggre_num = agg_descs_.size();
       for (int i = 0; i < aggre_num - 1 ; i++) {
         aggre_type_print(os, agg_descs_.at(i)->aggre_type);
@@ -192,7 +195,6 @@ void TupleSchema::print(std::ostream &os, bool multi_table) const {
       os << "(";
       aggre_attr_print(os, aggre_num - 1);
       os << ")" << std::endl;
-    }
   }
 }
 

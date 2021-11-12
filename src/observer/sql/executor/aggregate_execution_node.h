@@ -47,7 +47,7 @@ class SimpleAggregationHashTable {
           values.emplace_back(new FloatValue(0));
           break;
         case AggreType::SUMS:
-          values.emplace_back(new FloatValue(0));
+          values.emplace_back(new NullValue());
           break;
         case AggreType::MINS:
           values.emplace_back(new NullValue());
@@ -56,7 +56,7 @@ class SimpleAggregationHashTable {
           values.emplace_back(new NullValue());
           break;
         case AggreType::AVGS:
-          values.emplace_back(new FloatValue(0));
+          values.emplace_back(new NullValue());
           break;
 				default:
 					assert(false);
@@ -76,6 +76,9 @@ class SimpleAggregationHashTable {
           result->aggregates_[i]->plus(1);
           break;
         case AggreType::SUMS:
+          if (result->aggregates_[i]->Type() == AttrType::UNDEFINED) {
+            result->aggregates_[i] = std::shared_ptr<TupleValue>(new FloatValue(0));
+          }
           result->aggregates_[i]->plus(input.aggregates_[i]->value());
           break;
         case AggreType::MAXS:
@@ -91,6 +94,9 @@ class SimpleAggregationHashTable {
 					}
           break;
 				case AggreType::AVGS:
+          if (result->aggregates_[i]->Type() == AttrType::UNDEFINED) {
+            result->aggregates_[i] = std::shared_ptr<TupleValue>(new FloatValue(0));
+          }
           result->aggregates_[i]->plus(input.aggregates_[i]->value());
 					break;
 				default:

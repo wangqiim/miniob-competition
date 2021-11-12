@@ -53,7 +53,6 @@ RC AggregationExeNode::init(Trx *trx, Table *table, TupleSchema &&group_bys, Tup
 	return RC::SUCCESS;
 }
 
-// TODO(wq): null
 RC AggregationExeNode::execute(TupleSet &output_tuple_set) {
   output_tuple_set.clear();
   std::vector<Tuple> &tuples = const_cast<std::vector<Tuple> &>(tuple_set_.tuples());
@@ -72,7 +71,8 @@ RC AggregationExeNode::execute(TupleSet &output_tuple_set) {
       output_tuple.add(agg_key.group_bys_[i]);
     }
 		for (int i = 0; i < agg_val.aggregates_.size(); i++) {
-			if (agg_descs_[i]->aggre_type == AggreType::AVGS) {
+			if (agg_descs_[i]->aggre_type == AggreType::AVGS 
+          && agg_val.aggregates_[i]->Type() != AttrType::UNDEFINED) {
 				float avg = agg_val.aggregates_[i]->value() / agg_val.count_[i];
 				output_tuple.add(new FloatValue(avg));
 			} else {
@@ -86,7 +86,8 @@ RC AggregationExeNode::execute(TupleSet &output_tuple_set) {
 
 	//TODO(wq): 打印的这段逻辑应该拿出来
 	// 打印头
-	group_bys_.print(*os_, true, false);
+  bool is_multi_table = (tuple_set_.get_schema().table_field_index().size() != 1);
+	group_bys_.print(*os_, is_multi_table, false);
 
 	int aggre_num = agg_descs_.size();
 	for (int i = 0; i < aggre_num - 1 ; i++) {

@@ -35,13 +35,14 @@ class SimpleAggregationHashTable {
  public:
  SimpleAggregationHashTable() = default;
 
-  void init(const std::vector<AggreDesc *> &agg_descs) { agg_descs_ = agg_descs; }
+  void init(const std::vector<std::shared_ptr<AggreDesc>> &agg_descs) { agg_descs_ = agg_descs; }
 
   /** @return the initial aggregrate value for this aggregation executor */
   AggregateValue GenerateInitialAggregateValue() {
     std::vector<std::shared_ptr<TupleValue>> values;
     std::vector<int> counts(agg_descs_.size(), 0);
-    for (const AggreDesc *agg_desc : agg_descs_) {
+    for (int i = 0 ; i < agg_descs_.size(); i++) {
+      const AggreDesc *agg_desc = agg_descs_[i].get();
       switch (agg_desc->aggre_type) {
         case AggreType::COUNTS:
           values.emplace_back(new FloatValue(0));
@@ -159,7 +160,7 @@ class SimpleAggregationHashTable {
   /** The hash table is just a map from aggregate keys to aggregate values. */
   std::map<AggregateKey, AggregateValue> ht_{};
   /** The aggregate expressions that we have. */
-  std::vector<AggreDesc *> agg_descs_;
+  std::vector<std::shared_ptr<AggreDesc>> agg_descs_;
 };
 
 /**
@@ -170,8 +171,7 @@ class AggregationExeNode : public ExecutionNode {
   AggregationExeNode() = default;
   ~AggregationExeNode() = default;
 
-  RC init(Trx *trx, Table *table, TupleSchema &&group_bys, TupleSet &&tuple_set,
-          std::vector<AggreDesc *> &agg_descs, std::ostream &os);
+  RC init(Trx *trx, Table *table, TupleSchema &&group_bys, TupleSet &&tuple_set);
 
   RC execute(TupleSet &output_tuple_set) override;
 
@@ -189,7 +189,8 @@ class AggregationExeNode : public ExecutionNode {
   AggregateValue MakeVal(const Tuple *tuple) {
     std::vector<std::shared_ptr<TupleValue>> vals;
 		std::vector<int> counts(agg_descs_.size(), 1);
-    for (const AggreDesc *agg_desc : agg_descs_) {
+    for (int i = 0 ; i < agg_descs_.size(); i++) {
+      const AggreDesc *agg_desc = agg_descs_[i].get();
 			if (agg_desc->is_attr) {
 				// agg(relation_name,attr_name)
 				const char *table_name = agg_desc->relation_name;
@@ -207,19 +208,15 @@ class AggregationExeNode : public ExecutionNode {
     return {vals, counts};
   }
 
-  void aggre_type_print(std::ostream &os, AggreType type);
-  void aggre_attr_print(std::ostream &os, int aggre_index);
  private:
   Trx *trx_ = nullptr;
 	Table *table_; // 如果是单表,AggreDesc中无表名,为了找索引,用table来辅助找field的下标索引
   TupleSchema group_bys_; //通过这些字段聚集，如果为空说明无group by
-	std::vector<AggreDesc *> agg_descs_; // 所有的聚集函数
+	std::vector<std::shared_ptr<AggreDesc>> agg_descs_; // 所有的聚集函数
   /* aggregate on this tuple_set_ */
   TupleSet tuple_set_;
   /** Simple aggregation hash table. */
   SimpleAggregationHashTable aht_{};
   /** Simple aggregation hash table iterator. */
   SimpleAggregationHashTable::Iterator aht_iterator_;
-
-  std::ostream *os_;
 };

@@ -149,28 +149,91 @@ int TupleSchema::index_of_field(const char *table_name, const char *field_name) 
   return -1;
 }
 
-void TupleSchema::print(std::ostream &os, bool multi_table, bool endl) const {
-  if (fields_.empty()) {
+
+/**
+ * 有两种schema，一种是纯字段，一种是字段+聚集
+ * 例子:  id | name | age
+ * 例子:  id | name | sum(age) | count(age)
+ * 单表时字段不带表名，比较特殊
+ **/
+void TupleSchema::print(std::ostream &os, bool multi_table) const {
+  if (fields_.empty() && agg_descs_.empty()) {
+    LOG_ERROR("unexpected tuple schema");
     return;
   }
-
-  for (std::vector<TupleField>::const_iterator iter = fields_.begin(), end = --fields_.end();
-       iter != end; ++iter) {
-    if (multi_table) {
-      os << iter->table_name() << ".";
+  if (!fields_.empty()) {
+    for (std::vector<TupleField>::const_iterator iter = fields_.begin(), end = --fields_.end();
+        iter != end; ++iter) {
+      if (multi_table) {
+        os << iter->table_name() << ".";
+      }
+      os << iter->field_name() << " | ";
     }
-    os << iter->field_name() << " | ";
-  }
 
-  if (multi_table) {
-    os << fields_.back().table_name() << ".";
-  }
-  os << fields_.back().field_name();
+    if (multi_table) {
+      os << fields_.back().table_name() << ".";
+    }
+    os << fields_.back().field_name();
 
-  if (endl) {
-    os << std::endl;
+    if (agg_descs_.empty()) {
+      os << std::endl;
+    } else {
+      // 继续打印aggregate头
+      os << " | ";
+      int aggre_num = agg_descs_.size();
+      for (int i = 0; i < aggre_num - 1 ; i++) {
+        aggre_type_print(os, agg_descs_.at(i)->aggre_type);
+        os << "(";
+        aggre_attr_print(os, i);
+        os << ") | ";
+      }
+      const AggreDesc * last_aggre = agg_descs_.at(aggre_num - 1).get();
+      aggre_type_print(os, agg_descs_.at(aggre_num - 1)->aggre_type);
+      os << "(";
+      aggre_attr_print(os, aggre_num - 1);
+      os << ")" << std::endl;
+    }
+  }
+}
+
+void TupleSchema::aggre_type_print(std::ostream &os, AggreType type) const {
+  switch (type) {
+    case MAXS:
+      os << "max";
+      break;
+    case MINS:
+      os << "min";
+      break;
+    case AVGS:
+      os << "avg";
+      break;
+    case SUMS:
+      os << "sum";
+      break;
+    case COUNTS:
+      os << "count";
+      break;
+    default:
+			assert(false);
+  }
+}
+
+void TupleSchema::aggre_attr_print(std::ostream &os, int aggre_index) const {
+  const AggreDesc *aggre = agg_descs_.at(aggre_index).get();
+  if (aggre->is_attr == 1) {
+    if (aggre->relation_name != nullptr) {
+      os << aggre->relation_name << ".";
+    }
+    os << aggre->attr_name;
   } else {
-    os << " | ";
+    if (aggre->is_star == 1) {
+      if (aggre->relation_name != nullptr) {
+        os << aggre->relation_name << ".";
+      }
+      os << aggre->attr_name;
+    } else {
+      FloatValue(aggre->value).to_string(os);
+    }
   }
 }
 

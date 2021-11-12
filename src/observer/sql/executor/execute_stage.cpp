@@ -46,7 +46,7 @@ RC create_cartesian_executor(Trx *trx, const Selects &selects, const char *db, s
 RC create_orderby_executor(Trx *trx, const Selects &selects, const char *db, OrderByExeNode &order_by_exe_node,
                             const std::map<std::string, std::map<std::string, int>> &field_index);
 RC create_aggregation_executor(Trx *trx, const Selects &selects, const char *db, TupleSet &&tuple_set, AggregationExeNode &aggregation_node,
-                                const std::map<std::string, std::map<std::string, int>> &field_indexs, std::ostream &os);
+                                const std::map<std::string, std::map<std::string, int>> &field_indexs);
 RC create_output_executor(Trx *trx, const Selects &selects, const char *db, TupleSet &&tuple_set, OutputExeNode &output_node,
                             const std::map<std::string, std::map<std::string, int>> &field_index);
 RC aggreDesc_check_and_set(const Aggregate &aggregate, AggreDesc &aggre_desc, 
@@ -433,14 +433,15 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
   // 3. aggregate node
   if (selects.aggre_num != 0) {
     AggregationExeNode aggregationExeNode;
-    rc = create_aggregation_executor(trx, selects, db, std::move(tmp_tuple_set), aggregationExeNode, field_index, ss);
+    rc = create_aggregation_executor(trx, selects, db, std::move(tmp_tuple_set), aggregationExeNode, field_index);
     if (rc != RC::SUCCESS) {
       return rc;
     }
     aggregationExeNode.execute(tmp_tuple_set);
-    // todo(wq): 暂时不需要支持对聚集以后的结果进行排序，聚集函数时，这里直接返回结果return
-    // 还未考虑如果和outputNode合并
+    // 此时的tmp_tuple_set可以直接打印了
+    tmp_tuple_set.print(ss, is_multi_table);
   } else {
+    // 暂不支持 group-by之后进行排序
     // 4. order-by node
     if (selects.order_num != 0) {
       OrderByExeNode orderByExeNode;
@@ -744,22 +745,17 @@ RC aggreDesc_check_and_set(const Selects &selects, const char *db, const Aggrega
 
 // 生成最底层的aggregate 执行节点,
 RC create_aggregation_executor(Trx *trx, const Selects &selects, const char *db, TupleSet &&tuple_set, AggregationExeNode &aggregation_node,
-                                const std::map<std::string, std::map<std::string, int>> &field_index, std::ostream &os) {
-  std::vector<AggreDesc *> aggre_descs;
+                                const std::map<std::string, std::map<std::string, int>> &field_index) {
+  std::vector<std::shared_ptr<AggreDesc>> aggre_descs;
   // 枚举所有聚集函数
   for (int i = 0; i < selects.aggre_num; i++) {
-    // todo(wq):释放内存
-    AggreDesc *aggre_desc = new AggreDesc();
+    std::shared_ptr<AggreDesc> aggre_desc(new AggreDesc());
     if (RC::SUCCESS != aggreDesc_check_and_set(selects, db, selects.aggregates[i], *aggre_desc, field_index)) {
-      delete aggre_desc;
-      for (AggreDesc *& tmp_aggreDesc : aggre_descs) {
-        delete tmp_aggreDesc;
-      }
       return RC::INVALID_ARGUMENT;
     }
     // 是属性时，属性是否存在，类型是否合法
     // 属性是值时，检验是否是*,只有
-    aggre_descs.push_back(aggre_desc);
+    aggre_descs.emplace_back(std::move(aggre_desc));
   }
   Table *table = DefaultHandler::get_default().find_table(db, selects.relations[0]);
   TupleSchema group_bys;
@@ -771,5 +767,6 @@ RC create_aggregation_executor(Trx *trx, const Selects &selects, const char *db,
       TupleSchema::schema_add_field(t ,selects.group_bys[i].attribute_name, group_bys);
     }
   }
-  return aggregation_node.init(trx, table, std::move(group_bys), std::move(tuple_set), aggre_descs, os);
+  group_bys.Set_agg_descs(std::move(aggre_descs));
+  return aggregation_node.init(trx, table, std::move(group_bys), std::move(tuple_set));
 }

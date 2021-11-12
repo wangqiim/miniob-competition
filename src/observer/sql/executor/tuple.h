@@ -24,6 +24,7 @@ See the Mulan PSL v2 for more details. */
 
 class Table;
 class TupleSchema;
+struct AggreDesc;
 
 class Tuple {
 public:
@@ -131,15 +132,24 @@ public:
 
   void clear() { fields_.clear(); }
 
-  void print(std::ostream &os, bool multi_table = false, bool endl = true) const;
+  void print(std::ostream &os, bool multi_table = false) const;
 
   static void from_table(const Table *table, TupleSchema &schema);
   static void from_table(const std::vector<Table*> &tables, TupleSchema &schema);
   static void schema_add_field(Table *table, const char *field_name, TupleSchema &schema);
 
+  /* aggregation */
+  void Set_agg_descs(std::vector<std::shared_ptr<AggreDesc>> &&agg_descs) { agg_descs_ = std::move(agg_descs); }
+  
+  std::vector<std::shared_ptr<AggreDesc>> Get_agg_descs() { return agg_descs_; }
+  
+  void aggre_type_print(std::ostream &os, AggreType type) const;
+
+  void aggre_attr_print(std::ostream &os, int aggre_index) const;
 private:
   std::vector<TupleField> fields_;
   std::map<std::string, std::map<std::string, int>> table_field_index_;
+  std::vector<std::shared_ptr<AggreDesc>> agg_descs_;
 };
 
 class TupleSet {

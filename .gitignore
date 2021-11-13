@@ -5,3 +5,4 @@ deps/googletest
 deps/jsoncpp
 deps/libevent
 .idea
+*.log.*

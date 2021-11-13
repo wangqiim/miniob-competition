@@ -1,6 +1,7 @@
 #include <list>
 #include <unordered_map>
 #include <vector>
+#include <mutex>
 
 #include "storage/default/replacer.h"
 #include "storage/config.h"
@@ -31,8 +32,8 @@ class LRUReplacer : public Replacer {
   size_t Size() override;
 
  private:
+  std::mutex latch;
   std::unordered_map<FrameId, std::list<FrameId>::iterator> cache_map_;
   std::list<FrameId> cache_list_;  // from front to back: new -> old
-  size_t size_;
   size_t capacity_;
 };

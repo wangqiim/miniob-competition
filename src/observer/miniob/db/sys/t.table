@@ -1,0 +1,31 @@
+{
+	"fields" : 
+	[
+		{
+			"len" : 4,
+			"name" : "__trx",
+			"nullable" : false,
+			"offset" : 1,
+			"type" : "ints",
+			"visible" : false
+		},
+		{
+			"len" : 4,
+			"name" : "id",
+			"nullable" : false,
+			"offset" : 5,
+			"type" : "ints",
+			"visible" : true
+		},
+		{
+			"len" : 4,
+			"name" : "age",
+			"nullable" : false,
+			"offset" : 9,
+			"type" : "ints",
+			"visible" : true
+		}
+	],
+	"indexes" : null,
+	"table_name" : "t"
+}

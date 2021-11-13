@@ -24,7 +24,11 @@ See the Mulan PSL v2 for more details. */
 #define MAX_DATA 50
 
 #define DATESSIZE 12
-#define TEXTSIZE 4096
+// text: 前4字节存页号,后28字节存数据
+// 大小为4096的页中有4字节页号, 页头24字节，所以这里需要补(4 + 24) = 28字节)
+#define PAGENUMSIZE 4
+#define TEXTPATCHSIZE 28
+#define TEXTSIZE (PAGENUMSIZE+TEXTPATCHSIZE)
 
 //属性结构体
 typedef struct {

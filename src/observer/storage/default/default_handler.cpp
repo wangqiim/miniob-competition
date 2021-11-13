@@ -153,7 +153,9 @@ RC DefaultHandler::insert_record(Trx *trx, const char *dbname, const char *relat
   if (nullptr == table) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
-
+  if (table->has_text_field()) {
+    return table->insert_text_record(trx, value_num, values);
+  }
   return table->insert_record(trx, value_num, values);
 }
 RC DefaultHandler::delete_record(Trx *trx, const char *dbname, const char *relation_name,

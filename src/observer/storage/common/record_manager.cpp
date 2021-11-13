@@ -277,7 +277,7 @@ RC RecordPageHandler::get_first_record(Record *rec) {
 
 RC RecordPageHandler::get_next_record(Record *rec) {
   if (rec->rid.slot_num >= page_header_->record_capacity - 1) {
-    LOG_ERROR("Invalid slot_num:%d, exceed page's record capacity, file_id:page_num %d:%d.",
+    LOG_TRACE("[store Text field Page] Invalid slot_num:%d, exceed page's record capacity, file_id:page_num %d:%d.",
               rec->rid.slot_num,
               file_id_,
               page_handle_.frame->page.page_num);
@@ -457,6 +457,46 @@ RC RecordFileHandler::get_record(const RID *rid, Record *rec) {
   }
 
   return page_handler.get_record(rid, rec);
+}
+
+RC RecordFileHandler::insert_text_data(const char *data, PageNum *page_num) {
+  RC ret = RC::SUCCESS;
+  // 分配一个新的空页面
+  BPPageHandle page_handle;
+  if ((ret = disk_buffer_pool_->allocate_page(file_id_, &page_handle)) != RC::SUCCESS) {
+    LOG_ERROR("Failed to allocate page while inserting record. file_it:%d, ret:%d",
+              file_id_, ret);
+    return ret;
+  }
+  
+  *page_num = page_handle.frame->page.page_num;
+  memset(page_handle.frame->page.data, 0, TEXTPATCHSIZE);
+  memcpy(page_handle.frame->page.data + TEXTPATCHSIZE, data, BP_PAGE_SIZE - TEXTPATCHSIZE);
+  ret = disk_buffer_pool_->mark_dirty(&page_handle);
+  if (ret != RC::SUCCESS) {
+    LOG_ERROR("Failed to mark page dirty. ret=%s", strrc(ret));
+  }
+  ret = disk_buffer_pool_->unpin_page(&page_handle);
+  assert(ret == RC::SUCCESS);
+  return ret;
+}
+
+RC RecordFileHandler::read_text_data(char *data, PageNum page_num) {
+  RC ret = RC::SUCCESS;
+  BPPageHandle page_handle;
+  if ((ret = disk_buffer_pool_->get_this_page(file_id_, page_num, &page_handle)) != RC::SUCCESS) {
+    LOG_ERROR("Failed to get page handle from disk buffer pool. ret=%d:%s", ret, strrc(ret));
+    return ret;
+  }
+
+  char *page_data;
+  ret = disk_buffer_pool_->get_data(&page_handle, &page_data);
+  if (ret != RC::SUCCESS) {
+    return ret;
+  }
+  memcpy(data, page_data + TEXTPATCHSIZE, BP_PAGE_SIZE - TEXTPATCHSIZE);
+  ret = disk_buffer_pool_->unpin_page(&page_handle);
+  return ret;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

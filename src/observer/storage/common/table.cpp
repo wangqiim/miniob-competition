@@ -921,3 +921,66 @@ RC Table::sync() {
   LOG_INFO("Sync table over. table=%s", name());
   return rc;
 }
+
+
+bool Table::has_text_field() {
+  for (int i = 0; i < table_meta_.field_num(); i++) {
+    if (table_meta_.field(i)->type() == AttrType::TEXTS) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// TODO(wq): 需要前置校验,(好懒)没写
+RC Table::insert_text_record(Trx *trx, int value_num, const Value *values) {
+  char *record_data;
+  Record record;
+  RC rc = make_and_insert_text_record(trx, value_num, values, &record);
+  delete[] record.data;
+  return rc;
+}
+
+RC Table::make_and_insert_text_record(Trx *trx, int value_num, const Value *values, Record *record) {
+  RC rc = RC::SUCCESS;
+  const int normal_field_start_index = table_meta_.sys_field_num();
+  
+  int record_size = table_meta_.record_size();
+  char *data = new char[record_size];
+  record->data = data;
+  common::Bitmap null_bitmap(data, align8(table_meta_.field_num()));
+
+  for (int i = 0; i < value_num; i++) {
+    const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
+    const Value &value = values[i];
+    if (value.isnull) {
+      null_bitmap.set_bit(i + normal_field_start_index);
+    } else {
+      null_bitmap.clear_bit(i + normal_field_start_index);
+      if (field->type() == AttrType::TEXTS) {
+        PageNum pagenum;
+        // 1. 获得一个页号，将text段第29~4096字节的数据插入到该页中(1~28字节留在原地)
+        // 2. 将页号赋值到该条Record中,text段的1~28字节紧随其后，共占32个字节
+        rc = record_handler_->insert_text_data((const char *)value.data + TEXTPATCHSIZE, &pagenum);
+        assert(rc == RC::SUCCESS);
+        memcpy(data + field->offset(), (char *)(&pagenum), PAGENUMSIZE);
+        memcpy(data + field->offset() + PAGENUMSIZE, (char *)value.data, TEXTPATCHSIZE);
+      } else {
+        memcpy(data + field->offset(), value.data, field->len());
+      }
+    }
+  }
+  rc = insert_record(trx, record);
+  if (rc != RC::SUCCESS) {
+    // TODO(wq):删除text字段
+    return rc;
+  }
+  return rc;
+}
+
+RC Table::read_text_record(char *data, PageNum page_num) {
+  RC rc = RC::SUCCESS;
+  rc = record_handler_->read_text_data(data, page_num);
+  assert(rc == SUCCESS);
+  return rc;
+}

@@ -313,6 +313,16 @@ const std::vector<Tuple> &TupleSet::tuples() const {
 }
 
 /////////////////////////////////////////////////////////////////////////////
+RC tuple_add_text_field(Table *table, Tuple &tuple, const char *record, const FieldMeta *field_meta) {
+  char s[4097] = {0};
+  PageNum page_num = *((PageNum *)(record + field_meta->offset()));
+  memcpy(s, record + field_meta->offset() + PAGENUMSIZE, TEXTPATCHSIZE); //将record中的前28个字节先取出来再说
+  // 从pagenum里读剩下的数据 (4096 - 28) 个字节
+  table->read_text_record(s + TEXTPATCHSIZE, page_num);
+  tuple.add(s, strlen(s));
+  return RC::SUCCESS;
+}
+
 TupleRecordConverter::TupleRecordConverter(Table *table, TupleSet &tuple_set) :
       table_(table), tuple_set_(tuple_set) { }
 
@@ -348,6 +358,11 @@ void TupleRecordConverter::add_record(const char *record) {
       case DATES: {
         const char *s = record + field_meta->offset();  // 现在当做Cstring来处理
         tuple.add(s, strlen(s));
+      }
+      break;
+      case TEXTS: {
+        RC rc = tuple_add_text_field(table_, tuple, record, field_meta);
+        assert(rc == RC::SUCCESS);
       }
       break;
       default: {

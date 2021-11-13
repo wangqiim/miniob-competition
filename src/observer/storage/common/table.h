@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_STORAGE_COMMON_TABLE_H__
 
 #include "storage/common/table_meta.h"
+#include "storage/config.h"
 
 class DiskBufferPool;
 class RecordFileHandler;
@@ -59,6 +60,13 @@ public:
 
   RC create_index(Trx *trx, const char *index_name, const char *attribute_name, int unique);
 
+  /**
+   * 为了text而设计
+   */
+  bool has_text_field();
+  RC insert_text_record(Trx *trx, int value_num, const Value *values);
+  RC make_and_insert_text_record(Trx *trx, int value_num, const Value *values, Record *record);
+  RC read_text_record(char *data, PageNum page_num); // 从page_num中读取剩余的(4096 - 28)个字节
 public:
   const char *name() const;
 

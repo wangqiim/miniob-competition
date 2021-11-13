@@ -136,6 +136,13 @@ public:
     return page_handler.update_record_in_place(rid, updater);
   }
 
+  /**
+   * 为text而设计的接口，用来将数据插入到该页中，并且获得对应的页号
+   */
+  RC insert_text_data(const char *data, PageNum *page_num);
+  RC read_text_data(char *data, PageNum page_num);
+  // TODO(wq): 删除，修改 text
+
 private:
   DiskBufferPool  *   disk_buffer_pool_;
   int                 file_id_;                    // 参考DiskBufferPool中的fileId

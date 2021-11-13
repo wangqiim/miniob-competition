@@ -125,6 +125,8 @@ void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t
   attr_info->type = type;
   if (type == DATES) {
     attr_info->length = DATESSIZE;
+  } else if (type == TEXTS) {
+    attr_info->length = TEXTSIZE;
   } else {
     attr_info->length = length;  
   }

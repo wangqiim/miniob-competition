@@ -24,6 +24,7 @@ See the Mulan PSL v2 for more details. */
 #define MAX_DATA 50
 
 #define DATESSIZE 12
+#define TEXTSIZE 4096
 
 //属性结构体
 typedef struct {
@@ -44,7 +45,7 @@ typedef enum {
 } CompOp;
 
 //属性值类型
-typedef enum { UNDEFINED, CHARS, INTS, DATES, FLOATS } AttrType;
+typedef enum { UNDEFINED, CHARS, INTS, DATES, TEXTS, FLOATS } AttrType;
 
 //聚合函数
 typedef enum { UNDEFINEDAGG, MAXS, MINS, AVGS, SUMS, COUNTS } AggreType;

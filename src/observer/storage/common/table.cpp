@@ -804,26 +804,30 @@ RC Table::delete_record(Trx *trx, Record *record) {
 
 RC Table::delete_text_record(Trx *trx, Record *record) {
   RC rc = RC::SUCCESS;
-  // 不走事务
-  rc = delete_entry_of_indexes(record->data, record->rid, false);// 重复代码 refer to commit_delete
-  if (rc != RC::SUCCESS) {
-    LOG_ERROR("Failed to delete indexes of record (rid=%d.%d). rc=%d:%s",
-              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+  if (trx != nullptr) {
+    rc = trx->delete_record(this, record);
   } else {
-    // 1. 删除存text的页
-    const FieldMeta *field_meta = nullptr;
-    PageNum page_num = -1;
-    for (int i = 0; i < table_meta_.field_num(); i++) {
-      field_meta = table_meta_.field(i);
-      if (field_meta->type() == AttrType::TEXTS) {
-        page_num = *((PageNum *)(record->data + field_meta->offset()));
-        rc = record_handler_->delete_text_data(&page_num, table_meta_.record_size()); // 将该text页重置为tuple页面
-        assert(rc == RC::SUCCESS);
+    rc = delete_entry_of_indexes(record->data, record->rid, false);// 重复代码 refer to commit_delete
+    if (rc != RC::SUCCESS) {
+      LOG_ERROR("Failed to delete indexes of record (rid=%d.%d). rc=%d:%s",
+                record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+    } else {
+      // 1. 删除存text的页
+      const FieldMeta *field_meta = nullptr;
+      PageNum page_num = -1;
+      for (int i = 0; i < table_meta_.field_num(); i++) {
+        field_meta = table_meta_.field(i);
+        if (field_meta->type() == AttrType::TEXTS) {
+          page_num = *((PageNum *)(record->data + field_meta->offset()));
+          rc = record_handler_->delete_text_data(&page_num, table_meta_.record_size()); // 将该text页重置为tuple页面
+          assert(rc == RC::SUCCESS);
+        }
       }
+      // 2. 删除record
+      rc = record_handler_->delete_record(&record->rid);
     }
-    // 2. 删除record
-    rc = record_handler_->delete_record(&record->rid);
-  }
+  } 
+  return rc;
 }
 
 RC Table::commit_delete(Trx *trx, const RID &rid) {
@@ -837,6 +841,19 @@ RC Table::commit_delete(Trx *trx, const RID &rid) {
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to delete indexes of record(rid=%d.%d). rc=%d:%s",
               rid.page_num, rid.slot_num, rc, strrc(rc));// panic?
+  }
+  // 如果带有text字段需要，则删除存text的页
+  if (has_text_field()) {
+    const FieldMeta *field_meta = nullptr;
+    PageNum page_num = -1;
+    for (int i = 0; i < table_meta_.field_num(); i++) {
+      field_meta = table_meta_.field(i);
+      if (field_meta->type() == AttrType::TEXTS) {
+        page_num = *((PageNum *)(record.data + field_meta->offset()));
+        rc = record_handler_->delete_text_data(&page_num, table_meta_.record_size()); // 将该text页重置为tuple页面
+        assert(rc == RC::SUCCESS);
+      }
+    }
   }
 
   rc = record_handler_->delete_record(&rid);

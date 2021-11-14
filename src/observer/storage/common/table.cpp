@@ -726,6 +726,7 @@ RC Table::update_record_text_attr(Trx *trx, Record *record, const FieldMeta *fie
     return rc;
   }
   // 1. 修改record中text的前28字节
+  memset(record->data + fieldMeta->offset() + PAGENUMSIZE, 0, TEXTPATCHSIZE);
   int inplace_update_size = std::min(static_cast<int>(strlen((const char *)value->data)), TEXTPATCHSIZE);
   memcpy(record->data + fieldMeta->offset() + PAGENUMSIZE, value->data, inplace_update_size);
   rc = record_handler_->update_record(record);

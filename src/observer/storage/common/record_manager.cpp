@@ -474,7 +474,7 @@ RC RecordFileHandler::insert_text_data(const char *data, PageNum *page_num) {
   memset(page_handle.frame->page.data, 0, TEXTPATCHSIZE);
   int data_len = static_cast<int>(strlen(data));
   int remain_size = std::min(std::max(0, data_len - TEXTPATCHSIZE), BP_PAGE_SIZE - TEXTPATCHSIZE);
-  memcpy(page_handle.frame->page.data + TEXTPATCHSIZE, data, remain_size); // allocate_page时，该页所有字节都被初始化为0了
+  memcpy(page_handle.frame->page.data + TEXTPATCHSIZE, data + TEXTPATCHSIZE, remain_size); // allocate_page时，该页所有字节都被初始化为0了
   ret = disk_buffer_pool_->mark_dirty(&page_handle);
   if (ret != RC::SUCCESS) {
     LOG_ERROR("Failed to mark page dirty. ret=%s", strrc(ret));
@@ -522,7 +522,7 @@ RC RecordFileHandler::update_text_data(const char *data, const PageNum *page_num
   }
   int data_len = static_cast<int>(strlen(data));
   int remain_size = std::min(std::max(0, data_len - TEXTPATCHSIZE), BP_PAGE_SIZE - TEXTPATCHSIZE);
-  memcpy(page_data + TEXTPATCHSIZE, data, remain_size);
+  memcpy(page_data + TEXTPATCHSIZE, data + TEXTPATCHSIZE, remain_size);
   ret = disk_buffer_pool_->mark_dirty(&page_handle);
   assert(ret == RC::SUCCESS);
   ret = disk_buffer_pool_->unpin_page(&page_handle);

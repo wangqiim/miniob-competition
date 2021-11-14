@@ -726,12 +726,13 @@ RC Table::update_record_text_attr(Trx *trx, Record *record, const FieldMeta *fie
     return rc;
   }
   // 1. 修改record中text的前28字节
-  memcpy(record->data + fieldMeta->offset() + PAGENUMSIZE, value->data, TEXTPATCHSIZE);
+  int inplace_update_size = std::min(static_cast<int>(strlen((const char *)value->data)), TEXTPATCHSIZE);
+  memcpy(record->data + fieldMeta->offset() + PAGENUMSIZE, value->data, inplace_update_size);
   rc = record_handler_->update_record(record);
   assert(rc == RC::SUCCESS);
   // 2. 获得存放text的page_num,并且修改其内容
   PageNum page_num = *((PageNum *)(record->data + fieldMeta->offset()));
-  rc = record_handler_->update_text_data((const char *)value->data + TEXTPATCHSIZE, &page_num);
+  rc = record_handler_->update_text_data((const char *)value->data, &page_num);
   assert(rc == RC::SUCCESS);
   rc = insert_entry_of_indexes(record->data, record->rid);
   if (rc != RC::SUCCESS) {
@@ -1024,10 +1025,11 @@ RC Table::make_and_insert_text_record(Trx *trx, int value_num, const Value *valu
         PageNum pagenum;
         // 1. 获得一个页号，将text段第29~4096字节的数据插入到该页中(1~28字节留在原地)
         // 2. 将页号赋值到该条Record中,text段的1~28字节紧随其后，共占32个字节
-        rc = record_handler_->insert_text_data((const char *)value.data + TEXTPATCHSIZE, &pagenum);
+        rc = record_handler_->insert_text_data((const char *)value.data, &pagenum);
         assert(rc == RC::SUCCESS);
         memcpy(data + field->offset(), (char *)(&pagenum), PAGENUMSIZE);
-        memcpy(data + field->offset() + PAGENUMSIZE, (char *)value.data, TEXTPATCHSIZE);
+        int inplace_insert_size = std::min(static_cast<int>(strlen((const char *)value.data)), TEXTPATCHSIZE);
+        memcpy(data + field->offset() + PAGENUMSIZE, (char *)value.data, inplace_insert_size);
       } else {
         memcpy(data + field->offset(), value.data, field->len());
       }

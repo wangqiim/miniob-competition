@@ -631,7 +631,11 @@ public:
 
   RC update_record(Record *record) {
     RC rc = RC::SUCCESS;
-    rc = table_.update_record_one_attr(trx_, record, fieldMeta_, value_);
+    if (fieldMeta_->type() == AttrType::TEXTS) {
+      rc = table_.update_record_text_attr(trx_, record, fieldMeta_, value_);
+    } else {
+      rc = table_.update_record_one_attr(trx_, record, fieldMeta_, value_);
+    }
     if (rc == RC::SUCCESS) {
       updated_count_++;
     }
@@ -670,7 +674,9 @@ RC Table::update_record(Trx *trx, const char *attribute_name, const Value *value
     return RC::SCHEMA_FIELD_NOT_EXIST;
   }
   if (fieldMeta->type() != value->type) {
-    if (fieldMeta->type() == DATES && value->type == CHARS &&
+    if (fieldMeta->type() == TEXTS && value->type == CHARS) {
+        ((Value *)value)->type = TEXTS;
+    } else if (fieldMeta->type() == DATES && value->type == CHARS &&
         theGlobalDateUtil()->Check_and_format_date(((Value *)value)->data) == RC::SUCCESS) {
         ((Value *)value)->type = DATES;
     } else {
@@ -708,6 +714,35 @@ RC Table::update_record_one_attr(Trx *trx, Record *record, const FieldMeta *fiel
   return rc;
 }
 
+RC Table::update_record_text_attr(Trx *trx, Record *record, const FieldMeta *fieldMeta, const Value *value) {
+  RC rc = RC::SUCCESS;
+  // 这里不考虑事务，直接原地修改
+  // index应该是多余的，先保留
+  rc = record_handler_->get_record(&(record->rid), record);
+  rc = delete_entry_of_indexes(record->data, record->rid, false);// 重复代码 refer to commit_delete
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to update phase 1 indexes of record (rid=%d.%d). rc=%d:%s",
+              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+    return rc;
+  }
+  // 1. 修改record中text的前28字节
+  memcpy(record->data + fieldMeta->offset() + PAGENUMSIZE, value->data, TEXTPATCHSIZE);
+  rc = record_handler_->update_record(record);
+  assert(rc == RC::SUCCESS);
+  // 2. 获得存放text的page_num,并且修改其内容
+  PageNum page_num = *((PageNum *)(record->data + fieldMeta->offset()));
+  rc = record_handler_->update_text_data((const char *)value->data + TEXTPATCHSIZE, &page_num);
+  assert(rc == RC::SUCCESS);
+  rc = insert_entry_of_indexes(record->data, record->rid);
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to update phase 2 indexes of record (rid=%d.%d). rc=%d:%s",
+              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+    return rc;
+  }
+
+  return rc;
+}
+
 class RecordDeleter {
 public:
   RecordDeleter(Table &table, Trx *trx) : table_(table), trx_(trx) {
@@ -715,7 +750,11 @@ public:
 
   RC delete_record(Record *record) {
     RC rc = RC::SUCCESS;
-    rc = table_.delete_record(trx_, record);
+    if (table_.has_text_field()) {
+      rc = table_.delete_text_record(trx_, record);
+    } else {
+      rc = table_.delete_record(trx_, record);
+    }
     if (rc == RC::SUCCESS) {
       deleted_count_++;
     }
@@ -760,6 +799,30 @@ RC Table::delete_record(Trx *trx, Record *record) {
     }
   }
   return rc;
+}
+
+RC Table::delete_text_record(Trx *trx, Record *record) {
+  RC rc = RC::SUCCESS;
+  // 不走事务
+  rc = delete_entry_of_indexes(record->data, record->rid, false);// 重复代码 refer to commit_delete
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to delete indexes of record (rid=%d.%d). rc=%d:%s",
+              record->rid.page_num, record->rid.slot_num, rc, strrc(rc));
+  } else {
+    // 1. 删除存text的页
+    const FieldMeta *field_meta = nullptr;
+    PageNum page_num = -1;
+    for (int i = 0; i < table_meta_.field_num(); i++) {
+      field_meta = table_meta_.field(i);
+      if (field_meta->type() == AttrType::TEXTS) {
+        page_num = *((PageNum *)(record->data + field_meta->offset()));
+        rc = record_handler_->delete_text_data(&page_num, table_meta_.record_size()); // 将该text页重置为tuple页面
+        assert(rc == RC::SUCCESS);
+      }
+    }
+    // 2. 删除record
+    rc = record_handler_->delete_record(&record->rid);
+  }
 }
 
 RC Table::commit_delete(Trx *trx, const RID &rid) {
@@ -972,8 +1035,7 @@ RC Table::make_and_insert_text_record(Trx *trx, int value_num, const Value *valu
   }
   rc = insert_record(trx, record);
   if (rc != RC::SUCCESS) {
-    // TODO(wq):删除text字段
-    return rc;
+    assert(rc == RC::SUCCESS);
   }
   return rc;
 }

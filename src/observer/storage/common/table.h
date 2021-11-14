@@ -67,6 +67,9 @@ public:
   RC insert_text_record(Trx *trx, int value_num, const Value *values);
   RC make_and_insert_text_record(Trx *trx, int value_num, const Value *values, Record *record);
   RC read_text_record(char *data, PageNum page_num); // 从page_num中读取剩余的(4096 - 28)个字节
+
+  RC delete_text_record(Trx *trx, Record *record);
+  RC update_record_text_attr(Trx *trx, Record *record, const FieldMeta *fieldMeta, const Value *value);
 public:
   const char *name() const;
 

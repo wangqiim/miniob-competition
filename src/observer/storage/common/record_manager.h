@@ -141,7 +141,14 @@ public:
    */
   RC insert_text_data(const char *data, PageNum *page_num);
   RC read_text_data(char *data, PageNum page_num);
-  // TODO(wq): 删除，修改 text
+  /**
+   * TODO(wq): 原本的代码中delete时候假dispose_page掉页面，
+   * 是由于有一个扫描的PageHandle正pin住该页面，所以调用dispose_page没用
+   * 猜测是一个bug，所以这里的做法是不去dispose_page，取而代之的是将该页变成一个存tuple的空页
+   * delete_text_data函数实际上做的事情是：将该页重置成一个空的tuple页
+   */
+  RC delete_text_data(const PageNum *page_num, int record_size);
+  RC update_text_data(const char *data, const PageNum *page_num);
 
 private:
   DiskBufferPool  *   disk_buffer_pool_;

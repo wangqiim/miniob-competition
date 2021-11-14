@@ -499,6 +499,31 @@ RC RecordFileHandler::read_text_data(char *data, PageNum page_num) {
   return ret;
 }
 
+RC RecordFileHandler::delete_text_data(const PageNum *page_num, int record_size) {
+  RecordPageHandler tmp_record_page_handler;
+  return tmp_record_page_handler.init_empty_page(*disk_buffer_pool_, file_id_, *page_num, record_size);
+}
+
+RC RecordFileHandler::update_text_data(const char *data, const PageNum *page_num) {
+  RC ret = RC::SUCCESS;
+  BPPageHandle page_handle;
+  if ((ret = disk_buffer_pool_->get_this_page(file_id_, *page_num, &page_handle)) != RC::SUCCESS) {
+    LOG_ERROR("Failed to get page handle from disk buffer pool. ret=%d:%s", ret, strrc(ret));
+    return ret;
+  }
+
+  char *page_data;
+  ret = disk_buffer_pool_->get_data(&page_handle, &page_data);
+  if (ret != RC::SUCCESS) {
+    return ret;
+  }
+  memcpy(page_data + TEXTPATCHSIZE, data, BP_PAGE_SIZE - TEXTPATCHSIZE);
+  ret = disk_buffer_pool_->mark_dirty(&page_handle);
+  assert(ret == RC::SUCCESS);
+  ret = disk_buffer_pool_->unpin_page(&page_handle);
+  return ret;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 RecordFileScanner::RecordFileScanner() : 

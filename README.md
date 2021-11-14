@@ -5,3 +5,24 @@ miniob设计的目标是让不熟悉数据库设计和实现的同学能够快�
 
 # How to build
 please refer to docs/how_to_build.md
+
+# 进度
+[题目](https://oceanbase-partner.github.io/lectures-on-dbms-implementation/miniob-topics)
+- [x] 优化buffer pool
+- [x] 查询元数据校验(select-meta)
+- [x] drop table(drop-table)
+- [x] 实现update功能(update)
+- [x] 增加date字段(date)
+- [x] 多表查询(select-tables)
+- [x] 聚合运算(aggregation-func)
+- [x] 多表join操作(join-tables)
+- [x] 一次插入多条数据(insert)
+- [x] 唯一索引(unique)
+- [x] 支持NULL类型(null)
+- [ ] 简单子查询(simple-sub-query)
+- [ ] 多列索引(multi-index)
+- [x] 超长字段(text)
+- [ ] 查询支持表达式(expression)
+- [ ] 复杂子查询(complex-sub-query)
+- [x] 排序(order-by)
+- [x] 分组(group-by)

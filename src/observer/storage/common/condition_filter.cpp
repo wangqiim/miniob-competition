@@ -165,24 +165,6 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
   return init(&table, left, right, type_left, condition.comp);
 }
 
-bool compare_result(int cmp_result, CompOp comp_op) {
-  switch (comp_op) {
-    case EQUAL_TO:
-      return 0 == cmp_result;
-    case LESS_EQUAL:
-      return cmp_result <= 0;
-    case NOT_EQUAL:
-      return cmp_result != 0;
-    case LESS_THAN:
-      return cmp_result < 0;
-    case GREAT_EQUAL:
-      return cmp_result >= 0;
-    case GREAT_THAN:
-      return cmp_result > 0;
-    default:
-      return false;
-  }
-}
 
 bool DefaultConditionFilter::filter(const Record &rec) const
 {
@@ -521,10 +503,22 @@ bool Filter::filter(const Record &rec) const {
   return compare_result(cmp_result, comp_op_);
 }
 
+/**
+ * 依据conditions构造filters
+ * @param conditions
+ * @param condition_num
+ * @param filters
+ * @param ban_all 遇到 value op value，那么可以直接判断，如果，value op value == false，那么对于记录的所有过滤都不通过
+ * @param attr_only 如果为true，那么只处理 attr op attr的情况，而忽略其他的条件。因为 attr op value的过滤条件不涉及到多表操作
+ *                  减少后续处理的数据量
+ */
 void  Filter::from_condition(Condition *conditions, size_t condition_num, std::vector<Filter*> &filters, bool &ban_all, bool attr_only) {
   ban_all = false;
   for (int i = 0; i < condition_num; ++i) {
     Condition condition = conditions[i];
+    if (condition.is_sub_select) {
+      continue;
+    }
     FilterDesc left_filter_desc;
     left_filter_desc.is_attr = (condition.left_is_attr == 1);
     FilterDesc right_filter_desc;
@@ -570,17 +564,40 @@ void  Filter::from_condition(Condition *conditions, size_t condition_num, std::v
   }
 }
 
+bool compare_result(int cmp_result, CompOp comp_op) {
+  switch (comp_op) {
+    case EQUAL_TO:
+      return 0 == cmp_result;
+    case LESS_EQUAL:
+      return cmp_result <= 0;
+    case NOT_EQUAL:
+      return cmp_result != 0;
+    case LESS_THAN:
+      return cmp_result < 0;
+    case GREAT_EQUAL:
+      return cmp_result >= 0;
+    case GREAT_THAN:
+      return cmp_result > 0;
+    default:
+      return false;
+  }
+}
+
 /**
  * 只构建与table相关的filter, 仅包含情况：table.field op value ||  value op table.field
  * @param conditions
  * @param condition_num
  * @param table
  * @param filters
+ * @param ban_all 遇到 value op value，那么可以直接判断，如果，value op value == false，那么对于记录的所有过滤都不通过
  */
 void  Filter::from_condition_with_table(Condition conditions[], size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all) {
   ban_all = false;
   for (size_t i = 0; i < condition_num; ++i) {
     const Condition &condition = conditions[i];
+    if (condition.is_sub_select) {
+      continue;
+    }
     FilterDesc left_filter_desc;
     left_filter_desc.is_attr = (condition.left_is_attr == 1);
     FilterDesc right_filter_desc;

@@ -54,7 +54,7 @@ public:
     return values_.size();
   }
 
-  const TupleValue &get(int index) const {
+  TupleValue &get(int index) {
     return *values_[index];
   }
 
@@ -173,7 +173,7 @@ public:
   bool is_empty() const;
   int size() const;
   const Tuple &get(int index) const;
-  const std::vector<Tuple> &tuples() const;
+  std::vector<Tuple> &tuples();
 
   void print(std::ostream &os, bool multi_table = false) const;
 public:

@@ -12,6 +12,7 @@
 #include "rc.h"
 #include "executor.h"
 #include "scan_executor.h"
+#include "sub_query_executor.h"
 
 class ExecutorBuilder {
 public:
@@ -20,11 +21,13 @@ public:
 
   Executor* build();
 
-  Executor* build_select_executor();
+  Executor* build(Selects *selects);
 
-  Executor* build_join_executor(Executor *executor);
+  Executor* build_select_executor(Selects *selects);
 
-  TupleSchema build_output_schema();
+  Executor* build_join_executor(Executor *executor, Selects *selects);
+
+  TupleSchema build_output_schema(Selects *selects);
 
 
 private:

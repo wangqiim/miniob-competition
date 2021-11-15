@@ -187,4 +187,6 @@ private:
   CompOp   comp_op_ = NO_OP;
 };
 
+bool compare_result(int cmp_result, CompOp comp_op);
+
 #endif // __OBSERVER_STORAGE_COMMON_CONDITION_FILTER_H_

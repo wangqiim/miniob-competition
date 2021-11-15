@@ -29,12 +29,13 @@ public:
 
   virtual void to_string(std::ostream &os) const = 0;
   virtual int compare(const TupleValue &other) const = 0;
+  virtual void *value() = 0;
 
   /* 只有floatValue会用到 */
   virtual void plus(float val) = 0;
   /* 只有floatValue会用到 */
   virtual float value() = 0;
-  
+
 
   AttrType Type() const { return type_;}
   void SetType(AttrType type) { type_ = type; }
@@ -59,6 +60,10 @@ public:
 
   void plus(float val) override { value_ += val; }
   float value() override { return value_; }
+  void *value() override {
+    return &value_;
+  }
+
 private:
   int value_;
 };
@@ -85,6 +90,10 @@ public:
       break;
     }
     os << s;
+  }
+
+  void *value() override {
+    return &value_;
   }
 
   int compare(const TupleValue &other) const override {
@@ -121,11 +130,15 @@ public:
     os << value_;
   }
 
+  void *value() override {
+    return &value_;
+  }
+
   int compare(const TupleValue &other) const override {
     const StringValue &string_other = (const StringValue &)other;
     return strcmp(value_.c_str(), string_other.value_.c_str());
   }
-  
+
   void plus(float val) override { assert(false); }
   float value() override { assert(false); }
 private:
@@ -146,6 +159,9 @@ public:
     // TODO(wq): 哪里用到??
     assert(false);
     return -1;
+  }
+  void *value() {
+    return nullptr;
   }
 
   void plus(float val) override { assert(false); }

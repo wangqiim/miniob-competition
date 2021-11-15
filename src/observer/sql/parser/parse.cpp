@@ -89,9 +89,15 @@ void value_destroy(Value *value) {
   value->data = nullptr;
 }
 
+void show_selects(Selects selects[], int select_index) {
+  for (int i = 0; i <= select_index; i++) {
+    Selects s = selects[i];
+    printf("%d", s.order_num);
+  }
+}
 void condition_init(Condition *condition, CompOp comp, 
                     int left_is_attr, RelAttr *left_attr, Value *left_value,
-                    int right_is_attr, RelAttr *right_attr, Value *right_value) {
+                    int right_is_attr, RelAttr *right_attr, Value *right_value, Selects *selects) {
   condition->comp = comp;
   condition->left_is_attr = left_is_attr;
   if (left_is_attr) {
@@ -101,11 +107,18 @@ void condition_init(Condition *condition, CompOp comp,
   }
 
   condition->right_is_attr = right_is_attr;
-  if (right_is_attr) {
-    condition->right_attr = *right_attr;
+
+  if (selects) {
+    condition->selects = selects;
+    condition->is_sub_select = 1;
   } else {
-    condition->right_value = *right_value;
+    if (right_is_attr) {
+      condition->right_attr = *right_attr;
+    } else {
+      condition->right_value = *right_value;
+    }
   }
+
 }
 void condition_destroy(Condition *condition) {
   if (condition->left_is_attr) {

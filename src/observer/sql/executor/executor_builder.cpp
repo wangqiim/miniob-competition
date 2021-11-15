@@ -87,6 +87,10 @@ Executor* ExecutorBuilder::build_select_executor(Selects *selects) {
     Condition condition = selects->conditions[i];
     if (condition.is_sub_select) {
       right_executor = build(condition.selects);
+      if (condition.left_attr.relation_name == nullptr) {
+        assert(selects->relation_num == 1);
+        condition.left_attr.relation_name = selects->relations[0];
+      }
       left_executor = new SubQueryExecutor(context, left_executor, condition.left_attr, condition.comp, right_executor);
     }
   }
@@ -132,6 +136,10 @@ Executor* ExecutorBuilder::build_join_executor(Executor *executor, Selects *sele
       Condition condition = selects->joins[i].conditions[j];
       if (condition.is_sub_select) {
         right_executor = build(condition.selects);
+        if (condition.left_attr.relation_name == nullptr) {
+          assert(selects->relation_num == 1);
+          condition.left_attr.relation_name = selects->relations[0];
+        }
         left_executor = new SubQueryExecutor(context, left_executor, condition.left_attr, condition.comp, right_executor);
       }
     }

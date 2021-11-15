@@ -262,10 +262,10 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
       
       const Selects &selects = sql->sstr.selection;
 
-      if (sql->sstr.selection.join_num > 0) {
-        rc = do_select_v2(current_db, sql, exe_event->sql_event()->session_event());
-      } else {
+      if (selects.order_num > 0 || selects.group_num > 0) {
         rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
+      } else {
+        rc = do_select_v2(current_db, sql, exe_event->sql_event()->session_event());
       }
 
       if (rc != RC::SUCCESS) {

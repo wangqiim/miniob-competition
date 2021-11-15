@@ -29,11 +29,11 @@ public:
 
   virtual void to_string(std::ostream &os) const = 0;
   virtual int compare(const TupleValue &other) const = 0;
-  virtual void *value() = 0;
+  virtual void *value_pointer() = 0;
 
   /* 只有floatValue会用到 */
   virtual void plus(float val) = 0;
-  /* 只有floatValue会用到 */
+  /* 只有float int会用到 */
   virtual float value() = 0;
 
 
@@ -60,7 +60,7 @@ public:
 
   void plus(float val) override { value_ += val; }
   float value() override { return value_; }
-  void *value() override {
+  void *value_pointer() override {
     return &value_;
   }
 
@@ -92,7 +92,7 @@ public:
     os << s;
   }
 
-  void *value() override {
+  void *value_pointer() override {
     return &value_;
   }
 
@@ -130,7 +130,7 @@ public:
     os << value_;
   }
 
-  void *value() override {
+  void *value_pointer() override {
     return &value_;
   }
 
@@ -160,7 +160,7 @@ public:
     assert(false);
     return -1;
   }
-  void *value() {
+  void *value_pointer() {
     return nullptr;
   }
 

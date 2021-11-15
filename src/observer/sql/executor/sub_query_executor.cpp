@@ -38,11 +38,11 @@ struct ValueHash {
   size_t operator()(const std::shared_ptr<TupleValue> &v) const
   {
     if (v->Type() == CHARS || v->Type() == DATES) {
-      return std::hash<std::string>()((const char*)v->value());
+      return std::hash<std::string>()((const char*)v->value_pointer());
     } else if(v->Type() == INTS) {
-      return std::hash<int>()(*(const int*)v->value());
+      return std::hash<int>()(*(const int*)v->value_pointer());
     } else if (v->Type() == FLOATS) {
-      return std::hash<float>()(*(const float*)v->value());
+      return std::hash<float>()(*(const float*)v->value_pointer());
     } else {
       return 0;
     }

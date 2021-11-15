@@ -177,6 +177,26 @@ const IndexMeta * TableMeta::find_index_by_field(const char *field) const {
   return nullptr;
 }
 
+const IndexMeta * TableMeta::find_index_by_fields(const int attribute_num, char * const attribute_names[]) const {
+  for (const IndexMeta &index : indexes_) {
+    const std::vector<std::string> &fields = index.fields();
+    if (fields.size() != attribute_num) {
+      continue;
+    }
+    bool is_same = true;
+    for (int i = 0; i < attribute_num; i++) {
+      if (0 != strcmp(fields[i].c_str(), attribute_names[i])) {
+        is_same = false;
+        break;
+      }
+    }
+    if (is_same) {
+      return &index;
+    }
+  }
+  return nullptr;
+}
+
 const IndexMeta * TableMeta::index(int i ) const {
   return &indexes_[i];
 }

@@ -241,17 +241,26 @@ desc_table:
     ;
 
 create_index:		/*create index 语句的语法解析树*/
-    CREATE INDEX ID ON ID LBRACE ID RBRACE SEMICOLON 
+    CREATE INDEX ID ON ID LBRACE ID id_list RBRACE SEMICOLON 
 		{
 			CONTEXT->ssql->flag = SCF_CREATE_INDEX;//"create_index";
-			create_index_init(&CONTEXT->ssql->sstr.create_index, 0, $3, $5, $7);
+			create_index_init(&CONTEXT->ssql->sstr.create_index, 0, $3, $5);
+			create_index_append_attribute(&CONTEXT->ssql->sstr.create_index, $7);
 		}
 	| CREATE UNIQUE INDEX ID ON ID LBRACE ID RBRACE SEMICOLON 
 		{
 			CONTEXT->ssql->flag = SCF_CREATE_INDEX;//"create_index";(unique)
-			create_index_init(&CONTEXT->ssql->sstr.create_index, 1, $4, $6, $8);
+			create_index_init(&CONTEXT->ssql->sstr.create_index, 1, $4, $6);
+			create_index_append_attribute(&CONTEXT->ssql->sstr.create_index, $8);
 		}
     ;
+
+id_list:
+	/* empty */
+	| COMMA ID id_list {
+		create_index_append_attribute(&CONTEXT->ssql->sstr.create_index, $2);
+	}
+	;
 
 drop_index:			/*drop index 语句的语法解析树*/
     DROP INDEX ID  SEMICOLON 

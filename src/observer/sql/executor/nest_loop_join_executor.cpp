@@ -36,6 +36,10 @@ RC NestLoopJoinExecutor::next(TupleSet &tuple_set, std::vector<Filter*> *filters
   left_executor_->next(left_tuple_set);
   TupleSet right_tuple_set;
   right_executor_->next(right_tuple_set);
+
+  if (left_tuple_set.size() == 0 || right_tuple_set.size() == 0) {
+    return RC::SUCCESS;
+  }
   
   std::vector<int> left_tuple_index = output_schema_.index_in(left_tuple_set.get_schema());
   std::vector<int> right_tuple_index = output_schema_.index_in(right_tuple_set.get_schema());

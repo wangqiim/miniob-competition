@@ -89,23 +89,64 @@ void value_destroy(Value *value) {
   value->data = nullptr;
 }
 
+void show_selects(Selects selects[], int select_index) {
+  for (int i = 0; i <= select_index; i++) {
+    Selects s = selects[i];
+    printf("%d", s.order_num);
+  }
+}
+
+void clear_selects(Selects *selects) {
+  selects->aggre_num = 0;
+  selects->attr_num = 0;
+  selects->relation_num = 0;
+  selects->join_num = 0;
+  selects->condition_num = 0;
+  selects->order_num = 0;
+  selects->group_num = 0;
+}
+
 void condition_init(Condition *condition, CompOp comp, 
                     int left_is_attr, RelAttr *left_attr, Value *left_value,
-                    int right_is_attr, RelAttr *right_attr, Value *right_value) {
+                    int right_is_attr, RelAttr *right_attr, Value *right_value,
+                    Selects *left_selects, Selects *right_selects) {
+  condition->left_is_attr = 0;
+  condition->left_value.data = nullptr;
+  condition->left_is_select = 0;
+  condition->left_selects = nullptr;
+  condition->right_is_attr = 0;
+  condition->right_value.data = nullptr;
+  condition->right_is_select = 0;
+  condition->right_selects = nullptr;
+
   condition->comp = comp;
-  condition->left_is_attr = left_is_attr;
-  if (left_is_attr) {
-    condition->left_attr = *left_attr;
+
+  if (left_selects) {
+    condition->left_selects = new Selects_();
+    *condition->left_selects = *left_selects;
+    condition->left_is_select = 1;
   } else {
-    condition->left_value = *left_value;
+    condition->left_is_attr = left_is_attr;
+    if (left_is_attr) {
+      condition->left_attr = *left_attr;
+    } else {
+      condition->left_value = *left_value;
+    }
   }
 
-  condition->right_is_attr = right_is_attr;
-  if (right_is_attr) {
-    condition->right_attr = *right_attr;
+  if (right_selects) {
+    condition->right_selects = new Selects_();
+    *condition->right_selects = *right_selects;
+    condition->right_is_select = 1;
   } else {
-    condition->right_value = *right_value;
+    condition->right_is_attr = right_is_attr;
+    if (right_is_attr) {
+      condition->right_attr = *right_attr;
+    } else {
+      condition->right_value = *right_value;
+    }
   }
+
 }
 void condition_destroy(Condition *condition) {
   if (condition->left_is_attr) {

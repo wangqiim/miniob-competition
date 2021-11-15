@@ -16,7 +16,7 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_SQL_EXECUTOR_VALUE_H_
 
 #include <string.h>
-
+#include <math.h>
 #include <string>
 #include <ostream>
 #include <assert.h>
@@ -28,13 +28,14 @@ public:
   virtual ~TupleValue() = default;
 
   virtual void to_string(std::ostream &os) const = 0;
-  virtual int compare(const TupleValue &other) const = 0;
+  virtual int compare(TupleValue &other) const = 0;
+  virtual void *value_pointer() = 0;
 
   /* 只有floatValue会用到 */
   virtual void plus(float val) = 0;
-  /* 只有floatValue会用到 */
+  /* 只有float int会用到 */
   virtual float value() = 0;
-  
+
 
   AttrType Type() const { return type_;}
   void SetType(AttrType type) { type_ = type; }
@@ -52,13 +53,32 @@ public:
     os << value_;
   }
 
-  int compare(const TupleValue &other) const override {
-    const IntValue & int_other = (const IntValue &)other;
-    return value_ - int_other.value_;
+  int compare(TupleValue &other) const override {
+    if (other.Type() == FLOATS) {
+      float this_value = (float)value_;
+      float other_value = (*(float*)other.value_pointer());
+      float result = this_value - other_value;
+      if (-1e-5 < result && result < 1e-5) {
+        return 0;
+      }
+      if (result > 0) { // 浮点数没有考虑精度问题
+        return 1;
+      }
+      if (result < 0) {
+        return -1;
+      }
+    } else {
+      int other_value = *(int*)other.value_pointer();
+      return value_ - other_value;
+    }
   }
 
   void plus(float val) override { value_ += val; }
   float value() override { return value_; }
+  void *value_pointer() override {
+    return &value_;
+  }
+
 private:
   int value_;
 };
@@ -87,9 +107,18 @@ public:
     os << s;
   }
 
-  int compare(const TupleValue &other) const override {
-    const FloatValue & float_other = (const FloatValue &)other;
-    float result = value_ - float_other.value_;
+  void *value_pointer() override {
+    return &value_;
+  }
+
+  int compare(TupleValue &other) const override {
+    float other_value;
+    if (other.Type() == FLOATS) {
+      other_value = *(float*)other.value_pointer();
+    } else {
+      other_value = (float)*(int*)other.value_pointer();
+    }
+    float result = value_ - other_value;
     if (-1e-5 < result && result < 1e-5) {
       return 0;
     }
@@ -99,7 +128,6 @@ public:
     if (result < 0) {
       return -1;
     }
-    return 0;
   }
 
   void plus(float val) override { value_ += val; }
@@ -121,11 +149,15 @@ public:
     os << value_;
   }
 
-  int compare(const TupleValue &other) const override {
+  void *value_pointer() override {
+    return &value_;
+  }
+
+  int compare(TupleValue &other) const override {
     const StringValue &string_other = (const StringValue &)other;
     return strcmp(value_.c_str(), string_other.value_.c_str());
   }
-  
+
   void plus(float val) override { assert(false); }
   float value() override { assert(false); }
 private:
@@ -142,10 +174,13 @@ public:
     os << "null";
   }
 
-  int compare(const TupleValue &other) const override {
+  int compare(TupleValue &other) const override {
     // TODO(wq): 哪里用到??
     assert(false);
     return -1;
+  }
+  void *value_pointer() {
+    return nullptr;
   }
 
   void plus(float val) override { assert(false); }

@@ -49,7 +49,7 @@ RC create_aggregation_executor(Trx *trx, const Selects &selects, const char *db,
                                 const std::map<std::string, std::map<std::string, int>> &field_indexs);
 RC create_output_executor(Trx *trx, const Selects &selects, const char *db, TupleSet &&tuple_set, OutputExeNode &output_node,
                             const std::map<std::string, std::map<std::string, int>> &field_index);
-RC aggreDesc_check_and_set(const Aggregate &aggregate, AggreDesc &aggre_desc, 
+RC aggreDesc_check_and_set(const Aggregate &aggregate, AggreDesc &aggre_desc,
                             const std::map<std::string, std::map<std::string, int>> &field_index);
 
 //! Constructor
@@ -259,15 +259,13 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
 
   switch (sql->flag) {
     case SCF_SELECT: { // select
-      
       const Selects &selects = sql->sstr.selection;
-
-      if (sql->sstr.selection.join_num > 0) {
-        rc = do_select_v2(current_db, sql, exe_event->sql_event()->session_event());
-      } else {
+      if (selects.order_num > 0 || selects.group_num > 0) {
         rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
+      } else {
+        rc = do_select_v2(current_db, sql, exe_event->sql_event()->session_event());
       }
-    
+
       if (rc != RC::SUCCESS) {
         session_event->set_response("FAILURE\n");
       }
@@ -686,7 +684,7 @@ RC create_output_executor(Trx *trx, const Selects &selects, const char *db,
 
 // todo(wq):需要前置校验
 // 目前不考虑aggre(t.*)的情况, 以及 aggre("as"),仅可能"aggre(attr1),其中attr1是字符串属性
-RC aggreDesc_check_and_set(const Selects &selects, const char *db, const Aggregate &aggregate, AggreDesc &aggre_desc, 
+RC aggreDesc_check_and_set(const Selects &selects, const char *db, const Aggregate &aggregate, AggreDesc &aggre_desc,
                             const std::map<std::string, std::map<std::string, int>> &field_index) {
   aggre_desc.aggre_type = aggregate.aggre_type;
   aggre_desc.is_attr = aggregate.is_attr;
@@ -706,7 +704,7 @@ RC aggreDesc_check_and_set(const Selects &selects, const char *db, const Aggrega
       aggre_desc.value = 1;
       return RC::SUCCESS;
     }
-    
+
     // 检验聚合表和属性是否合法
     const FieldMeta *field_meta = nullptr;
     Table * table = nullptr;
@@ -725,7 +723,7 @@ RC aggreDesc_check_and_set(const Selects &selects, const char *db, const Aggrega
       return RC::SCHEMA_FIELD_MISSING;
     }
     // char和date字段不能进行 sum 和 avg 聚合
-    if ((field_meta->type() == AttrType::CHARS || field_meta->type() == AttrType::DATES) 
+    if ((field_meta->type() == AttrType::CHARS || field_meta->type() == AttrType::DATES)
         && (aggregate.aggre_type == AggreType::SUMS || aggregate.aggre_type == AggreType::AVGS)) {
       return RC::SCHEMA_FIELD_MISSING;
     }

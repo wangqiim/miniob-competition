@@ -20,6 +20,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/bitmap.h"
 #include <vector>
 #include <map>
+#include <sql/executor/executor_builder.h>
 
 using namespace common;
 
@@ -165,24 +166,6 @@ RC DefaultConditionFilter::init(Table &table, const Condition &condition)
   return init(&table, left, right, type_left, condition.comp);
 }
 
-bool compare_result(int cmp_result, CompOp comp_op) {
-  switch (comp_op) {
-    case EQUAL_TO:
-      return 0 == cmp_result;
-    case LESS_EQUAL:
-      return cmp_result <= 0;
-    case NOT_EQUAL:
-      return cmp_result != 0;
-    case LESS_THAN:
-      return cmp_result < 0;
-    case GREAT_EQUAL:
-      return cmp_result >= 0;
-    case GREAT_THAN:
-      return cmp_result > 0;
-    default:
-      return false;
-  }
-}
 
 bool DefaultConditionFilter::filter(const Record &rec) const
 {
@@ -369,20 +352,20 @@ bool CompositeCartesianFilter::filter(const Tuple &tuple) const {
   return true;
 }
 
-TupleValue *construct_from_value(const Value &value) {
-  TupleValue *result;
+std::shared_ptr<TupleValue> construct_tuple_value_from_value(const Value &value) {
+  std::shared_ptr<TupleValue> result;
   switch (value.type) {
     case CHARS: {
-      result = new StringValue((const char *)value.data);
+      result = std::make_shared<StringValue>((const char *)value.data);
     } break;
     case FLOATS: {
-      result = new FloatValue(*((float*)value.data));
+      result = std::make_shared<FloatValue>(*((float*)value.data));
     } break;
     case INTS: {
-      result = new IntValue(*((int*)value.data));
+      result = std::make_shared<IntValue>(*((int*)value.data));
     } break;
     case DATES: {
-      result = new StringValue((const char *)value.data);
+      result = std::make_shared<StringValue>((const char *)value.data);
     } break;
     default:
       return nullptr;
@@ -390,10 +373,29 @@ TupleValue *construct_from_value(const Value &value) {
   return result;
 }
 
-TupleValue *construct_desc_value(const FilterDesc &filter, const Tuple &left_tuple, TupleSchema &left_schema, const Tuple &right_tuple, TupleSchema &right_schema) {
+/**
+ * 依据子查询的查询结果构建TupleValue，
+ * 一般用在左右条件都是子查询的情况(eg, where (select xxx) op (select xxx))，
+ * 注意：只针对查询出的第一行第一列构建值
+ * @param selects
+ * @return
+ */
+std::shared_ptr<TupleValue> construct_tuple_value_from_selects(Db *db, Selects *selects) {
+  assert(db);
+  assert(selects);
+  TupleValue *value;
+  auto *builder = new ExecutorBuilder(db);
+  Executor *executor = builder->build(selects);
+  executor->init();
+  TupleSet tuple_set;
+  executor->next(tuple_set);
+  return tuple_set.get(0).get_pointer(0);
+}
+
+std::shared_ptr<TupleValue> construct_desc_value(const FilterDesc &filter, const Tuple &left_tuple, TupleSchema &left_schema, const Tuple &right_tuple, TupleSchema &right_schema) {
   const std::map<std::string, std::map<std::string, int>> &left_field_index = left_schema.table_field_index();
   const std::map<std::string, std::map<std::string, int>> &right_field_index = right_schema.table_field_index();
-  TupleValue *value = nullptr;
+  std::shared_ptr<TupleValue> value;
   if (filter.is_attr) {
     auto find_left_table = left_field_index.find(filter.table_name);
     if (find_left_table != left_field_index.end()) {
@@ -402,7 +404,7 @@ TupleValue *construct_desc_value(const FilterDesc &filter, const Tuple &left_tup
         return nullptr;
       }
       int left_index = find_left_field->second;
-      value = left_tuple.get_pointer(left_index).get();
+      value = left_tuple.get_pointer(left_index);
     } else {
       auto find_right_table = right_field_index.find(filter.table_name);
       if (find_right_table == right_field_index.end()) {
@@ -413,20 +415,20 @@ TupleValue *construct_desc_value(const FilterDesc &filter, const Tuple &left_tup
         return nullptr;
       }
       int right_index = find_right_field->second;
-      value = right_tuple.get_pointer(right_index).get();
+      value = right_tuple.get_pointer(right_index);
     }
   } else {
-    value = construct_from_value(filter.value);
+    value = construct_tuple_value_from_value(filter.value);
   }
   return value;
 }
 
 bool Filter::filter(const Tuple &left_tuple, TupleSchema &left_schema, const Tuple &right_tuple, TupleSchema &right_schema) const {
-  TupleValue *left_value = construct_desc_value(left_, left_tuple, left_schema, right_tuple, right_schema);
+  std::shared_ptr<TupleValue> left_value = construct_desc_value(left_, left_tuple, left_schema, right_tuple, right_schema);
   if (left_value == nullptr) {
     return false;
   }
-  TupleValue *right_value = construct_desc_value(right_, left_tuple, left_schema, right_tuple, right_schema);
+  std::shared_ptr<TupleValue> right_value = construct_desc_value(right_, left_tuple, left_schema, right_tuple, right_schema);
   if (right_value == nullptr) {
     return false;
   }
@@ -521,22 +523,63 @@ bool Filter::filter(const Record &rec) const {
   return compare_result(cmp_result, comp_op_);
 }
 
-void  Filter::from_condition(Condition *conditions, size_t condition_num, std::vector<Filter*> &filters, bool &ban_all, bool attr_only) {
+/**
+ * 将当前条件永远判定为true
+ * @param condition
+ */
+void change_to_true_condition(Condition &condition) {
+  condition.left_is_attr = 0;
+  condition.left_is_select = 0;
+  condition.left_value.type = INTS;
+  condition.left_value.data = malloc(sizeof(0));
+  memset(condition.left_value.data, 0, sizeof(0));
+
+  condition.comp = EQUAL_TO;
+  condition.right_is_attr = 0;
+  condition.right_is_select = 0;
+  condition.right_value.type = INTS;
+  condition.right_value.data = malloc(sizeof(0));
+  memset(condition.right_value.data, 0, sizeof(0));
+}
+
+/**
+ * 依据conditions构造filters
+ * @param conditions
+ * @param condition_num
+ * @param filters
+ * @param ban_all 遇到 value op value，那么可以直接判断，如果，value op value == false，那么对于记录的所有过滤都不通过
+ * @param attr_only 如果为true，那么只处理 attr op attr的情况，而忽略其他的条件。因为 attr op value的过滤条件不涉及到多表操作
+ *                  减少后续处理的数据量
+ */
+void  Filter::from_condition(Condition *conditions, size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all, bool attr_only, Db *db) {
   ban_all = false;
   for (int i = 0; i < condition_num; ++i) {
-    Condition condition = conditions[i];
+    Condition &condition = conditions[i];
+
     FilterDesc left_filter_desc;
     left_filter_desc.is_attr = (condition.left_is_attr == 1);
     FilterDesc right_filter_desc;
     right_filter_desc.is_attr = (condition.right_is_attr == 1);
-
-    if (!left_filter_desc.is_attr && !right_filter_desc.is_attr) {
-      left_filter_desc.value = condition.left_value;
-      right_filter_desc.value = condition.right_value;
-      TupleValue *left_value = construct_from_value(condition.left_value);
-      TupleValue *right_value = construct_from_value(condition.right_value);
+    if ((!condition.left_is_attr || condition.left_is_select) &&
+        (!condition.right_is_attr || condition.right_is_select)) {
+      std::shared_ptr<TupleValue> left_value;
+      std::shared_ptr<TupleValue> right_value;
+      if (condition.left_is_select) {
+        left_value = construct_tuple_value_from_selects(db, condition.left_selects);
+      } else { // left_is_select
+        assert(!condition.left_is_attr);
+        left_value = construct_tuple_value_from_value(condition.left_value);
+      }
+      if (condition.right_is_select) {
+        right_value = construct_tuple_value_from_selects(db, condition.right_selects);
+      } else { // right_is_select
+        assert(!condition.right_is_attr);
+        right_value = construct_tuple_value_from_value(condition.right_value);
+      }
       int cmp_result = left_value->compare(*right_value);
       if (compare_result(cmp_result, condition.comp)) {
+        // 该条件后续都不需要关注了，特别针对子查询的情况，防止后续条件再次进行子查询进行条件判断
+        change_to_true_condition(condition);
         continue;
       } else {
         filters.clear();
@@ -545,8 +588,20 @@ void  Filter::from_condition(Condition *conditions, size_t condition_num, std::v
       }
     }
 
+    if (condition.left_is_select || condition.right_is_select) {
+      continue;
+    }
+
     if (left_filter_desc.is_attr) {
-      left_filter_desc.table_name = condition.left_attr.relation_name;
+      if (table != nullptr && condition.left_attr.relation_name != nullptr && strcmp(condition.left_attr.relation_name, table->name()) != 0) {
+        continue;
+      }
+      if (condition.left_attr.relation_name == nullptr) {
+        assert(table != nullptr);
+        left_filter_desc.table_name = table->name();
+      } else {
+        left_filter_desc.table_name = condition.left_attr.relation_name;
+      }
       left_filter_desc.field_name = condition.left_attr.attribute_name;
     } else {
       if (attr_only) {
@@ -556,7 +611,15 @@ void  Filter::from_condition(Condition *conditions, size_t condition_num, std::v
       }
     }
     if (right_filter_desc.is_attr) {
-      right_filter_desc.table_name = condition.right_attr.relation_name;
+      if (table != nullptr && condition.right_attr.relation_name != nullptr && strcmp(condition.right_attr.relation_name, table->name()) != 0) {
+        continue;
+      }
+      if (condition.right_attr.relation_name == nullptr) {
+        assert(table != nullptr);
+        right_filter_desc.table_name = table->name();
+      } else {
+        right_filter_desc.table_name = condition.right_attr.relation_name;
+      }
       right_filter_desc.field_name = condition.right_attr.attribute_name;
     } else {
       if (attr_only) {
@@ -570,56 +633,21 @@ void  Filter::from_condition(Condition *conditions, size_t condition_num, std::v
   }
 }
 
-/**
- * 只构建与table相关的filter, 仅包含情况：table.field op value ||  value op table.field
- * @param conditions
- * @param condition_num
- * @param table
- * @param filters
- */
-void  Filter::from_condition_with_table(Condition conditions[], size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all) {
-  ban_all = false;
-  for (size_t i = 0; i < condition_num; ++i) {
-    const Condition &condition = conditions[i];
-    FilterDesc left_filter_desc;
-    left_filter_desc.is_attr = (condition.left_is_attr == 1);
-    FilterDesc right_filter_desc;
-    right_filter_desc.is_attr = (condition.right_is_attr == 1);
-
-    if (!left_filter_desc.is_attr && !right_filter_desc.is_attr) {
-      left_filter_desc.value = condition.left_value;
-      right_filter_desc.value = condition.right_value;
-      TupleValue *left_value = construct_from_value(condition.left_value);
-      TupleValue *right_value = construct_from_value(condition.left_value);
-      int cmp_result = left_value->compare(*right_value);
-      if (compare_result(cmp_result, condition.comp)) {
-        continue;
-      } else {
-        filters.clear();
-        ban_all = true;
-        break;
-      }
-    }
-
-    if (left_filter_desc.is_attr) {
-      if (condition.left_attr.relation_name != nullptr && strcmp(condition.left_attr.relation_name, table->name()) != 0) {
-          continue;
-      }
-      left_filter_desc.table_name = table->name();
-      left_filter_desc.field_name = condition.left_attr.attribute_name;
-    } else {
-      left_filter_desc.value = condition.left_value;
-    }
-    if (right_filter_desc.is_attr) {
-      if (condition.right_attr.relation_name && strcmp(condition.right_attr.relation_name, table->name()) != 0) {
-        continue;
-      }
-      right_filter_desc.table_name = table->name();
-      right_filter_desc.field_name = condition.right_attr.attribute_name;
-    } else {
-      right_filter_desc.value = condition.right_value;
-    }
-    auto *filter = new Filter(left_filter_desc, right_filter_desc, condition.comp);
-    filters.push_back(filter);
+bool compare_result(int cmp_result, CompOp comp_op) {
+  switch (comp_op) {
+    case EQUAL_TO:
+      return 0 == cmp_result;
+    case LESS_EQUAL:
+      return cmp_result <= 0;
+    case NOT_EQUAL:
+      return cmp_result != 0;
+    case LESS_THAN:
+      return cmp_result < 0;
+    case GREAT_EQUAL:
+      return cmp_result >= 0;
+    case GREAT_THAN:
+      return cmp_result > 0;
+    default:
+      return false;
   }
 }

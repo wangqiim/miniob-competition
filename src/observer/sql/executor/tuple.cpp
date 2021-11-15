@@ -308,7 +308,7 @@ const Tuple &TupleSet::get(int index) const {
   return tuples_[index];
 }
 
-const std::vector<Tuple> &TupleSet::tuples() const {
+std::vector<Tuple> &TupleSet::tuples() {
   return tuples_;
 }
 

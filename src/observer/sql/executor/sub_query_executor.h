@@ -14,10 +14,10 @@ class SubQueryExecutor : public Executor {
 
 public:
   SubQueryExecutor(ExecutorContext* context,
-                   const TupleSchema &output_schema,
-                   Executor *current_executor,
-                   Executor *sub_executor,
-                   std::vector<Filter*> condition_filters);
+                   Executor *left_executor,
+                   RelAttr left_attr,
+                   CompOp op,
+                   Executor *right_executor);
 
   ~SubQueryExecutor() = default;
 
@@ -26,9 +26,10 @@ public:
   RC next(TupleSet &tuple_set, std::vector<Filter*> *filters = nullptr) override;
 
 private:
-  Executor *current_executor_;
-  Executor *sub_executor_;
-  std::vector<Filter *> condition_filters_;
+  Executor *left_executor_;
+  RelAttr left_attr_;
+  CompOp op_;
+  Executor *right_executor_;
 };
 
 

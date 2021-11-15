@@ -24,7 +24,16 @@ See the Mulan PSL v2 for more details. */
 
 class Table;
 class TupleSchema;
-struct AggreDesc;
+
+struct AggreDesc {
+  AggreType aggre_type;
+  int       is_attr;          // 是否属性，false 表示是值
+  char *    relation_name;    // 如果是属性，则记录表名(用来决定最输出是tb.attr或attr)
+  char *    attr_name;        // 如果是属性，则记录属性名
+  int       is_star;          // *时，is_attr = 0, 用于辅助print时的表头和输入一致
+  float     value;            // 如果是值类型，这里记录值的数据
+};
+
 
 class Tuple {
 public:
@@ -54,7 +63,7 @@ public:
     return values_.size();
   }
 
-  const TupleValue &get(int index) const {
+  TupleValue &get(int index) {
     return *values_[index];
   }
 
@@ -111,12 +120,25 @@ public:
     if (!table_field_index_.empty()) {
       return table_field_index_;
     }
+    assert(fields_.empty() || agg_descs_.empty());
     const char *table_name;
     const char *field_name;
     for (int index = 0; index < fields_.size(); index++) {
       TupleField &field = fields_[index];
       table_name = field.table_name();
       field_name = field.field_name();
+      auto find_table = table_field_index_.find(table_name);
+      if (find_table == table_field_index_.end()) {
+        std::map<std::string, int> field_index{{field_name, index}};
+        table_field_index_.emplace(table_name, field_index);
+      } else {
+        find_table->second[field_name] = index;
+      }
+    }
+    for (int index = 0; index < agg_descs_.size(); index++) {
+      std::shared_ptr<AggreDesc> agg = agg_descs_[index];
+      table_name = agg->relation_name;
+      field_name = agg->attr_name;
       auto find_table = table_field_index_.find(table_name);
       if (find_table == table_field_index_.end()) {
         std::map<std::string, int> field_index{{field_name, index}};
@@ -173,7 +195,7 @@ public:
   bool is_empty() const;
   int size() const;
   const Tuple &get(int index) const;
-  const std::vector<Tuple> &tuples() const;
+  std::vector<Tuple> &tuples();
 
   void print(std::ostream &os, bool multi_table = false) const;
 public:
@@ -253,15 +275,6 @@ public:
 private:
   Table *table_;
   TupleSet &tuple_set_;
-};
-
-struct AggreDesc {
-  AggreType aggre_type;
-  int       is_attr;          // 是否属性，false 表示是值
-  char *    relation_name;    // 如果是属性，则记录表名(用来决定最输出是tb.attr或attr)
-  char *    attr_name;        // 如果是属性，则记录属性名
-  int       is_star;          // *时，is_attr = 0, 用于辅助print时的表头和输入一致
-  float     value;            // 如果是值类型，这里记录值的数据
 };
 
 #endif //__OBSERVER_SQL_EXECUTOR_TUPLE_H_

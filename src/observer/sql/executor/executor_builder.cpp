@@ -40,9 +40,11 @@ TupleSchema ExecutorBuilder::build_output_schema(Selects *selects) {
     }
   } else {
     for (int i = selects->attr_num - 1; i >= 0; i--) {
-      const RelAttr &attr = selects->attributes[i];
+      RelAttr &attr = selects->attributes[i];
       // 前置校验项，对于多表查询，必须指定relation_name
-      assert(nullptr != attr.relation_name);
+      if (attr.relation_name == NULL) {
+        attr.relation_name = selects->relations[0];
+      }
       Table *table = db_->find_table(attr.relation_name);
       if (0 == strcmp("*", attr.attribute_name)) {
         TupleSchema::from_table(table, output_schema);

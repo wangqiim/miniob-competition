@@ -112,8 +112,13 @@ public:
   }
 
   int compare(TupleValue &other) const override {
-    const FloatValue & float_other = (const FloatValue &)other;
-    float result = value_ - float_other.value_;
+    float other_value;
+    if (other.Type() == FLOATS) {
+      other_value = *(float*)other.value_pointer();
+    } else {
+      other_value = (float)*(int*)other.value_pointer();
+    }
+    float result = value_ - other_value;
     if (-1e-5 < result && result < 1e-5) {
       return 0;
     }
@@ -123,7 +128,6 @@ public:
     if (result < 0) {
       return -1;
     }
-    return 0;
   }
 
   void plus(float val) override { value_ += val; }

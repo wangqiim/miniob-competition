@@ -16,7 +16,7 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_SQL_EXECUTOR_VALUE_H_
 
 #include <string.h>
-
+#include <math.h>
 #include <string>
 #include <ostream>
 #include <assert.h>
@@ -28,7 +28,7 @@ public:
   virtual ~TupleValue() = default;
 
   virtual void to_string(std::ostream &os) const = 0;
-  virtual int compare(const TupleValue &other) const = 0;
+  virtual int compare(TupleValue &other) const = 0;
   virtual void *value_pointer() = 0;
 
   /* 只有floatValue会用到 */
@@ -53,9 +53,9 @@ public:
     os << value_;
   }
 
-  int compare(const TupleValue &other) const override {
-    const IntValue & int_other = (const IntValue &)other;
-    return value_ - int_other.value_;
+  int compare(TupleValue &other) const override {
+    int other_value = (int)(*(float*)other.value_pointer());
+    return value_ - other_value;
   }
 
   void plus(float val) override { value_ += val; }
@@ -96,7 +96,7 @@ public:
     return &value_;
   }
 
-  int compare(const TupleValue &other) const override {
+  int compare(TupleValue &other) const override {
     const FloatValue & float_other = (const FloatValue &)other;
     float result = value_ - float_other.value_;
     if (-1e-5 < result && result < 1e-5) {
@@ -134,7 +134,7 @@ public:
     return &value_;
   }
 
-  int compare(const TupleValue &other) const override {
+  int compare(TupleValue &other) const override {
     const StringValue &string_other = (const StringValue &)other;
     return strcmp(value_.c_str(), string_other.value_.c_str());
   }
@@ -155,7 +155,7 @@ public:
     os << "null";
   }
 
-  int compare(const TupleValue &other) const override {
+  int compare(TupleValue &other) const override {
     // TODO(wq): 哪里用到??
     assert(false);
     return -1;

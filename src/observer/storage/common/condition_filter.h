@@ -23,6 +23,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/parse.h"
 
 #include "storage/common/meta_util.h"
+#include "db.h"
 
 struct Record;
 class Table;
@@ -177,9 +178,7 @@ public:
   // 此时当前的Filter只能够对单个Table中的字段进行过滤
   bool filter(const Record &rec) const;
 
-  static void from_condition(Condition *conditions, size_t condition_num, std::vector<Filter*> &filters, bool &ban_all, bool attr_only=false);
-
-  static void from_condition_with_table(Condition *conditions, size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all);
+  static void from_condition(Condition *conditions, size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all, bool attr_only=false, Db *db=nullptr);
 
 private:
   FilterDesc  left_;

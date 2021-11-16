@@ -1,3 +1,7 @@
+
+#ifndef MINIDB_AGGEXECUTOR_NODE_H
+#define MINIDB_AGGEXECUTOR_NODE_H
+
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -220,3 +224,5 @@ class AggregationExeNode : public ExecutionNode {
   /** Simple aggregation hash table iterator. */
   SimpleAggregationHashTable::Iterator aht_iterator_;
 };
+
+#endif

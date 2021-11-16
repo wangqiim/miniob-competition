@@ -200,7 +200,7 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 152 "yacc_sql.y"
+#line 155 "yacc_sql.y"
 
   struct _Attr *attr;
   struct _Condition *condition1;

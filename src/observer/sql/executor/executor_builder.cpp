@@ -4,6 +4,7 @@
 
 #include "executor_builder.h"
 #include "nest_loop_join_executor.h"
+#include "agg_executor.h"
 
 Executor* ExecutorBuilder::build() {
   return build(&sql_->sstr.selection);
@@ -13,8 +14,12 @@ Executor* ExecutorBuilder::build(Selects *selects) {
   Executor *select_executor = build_select_executor(selects);
   Executor *executor = build_join_executor(select_executor, selects);
 
-  if (sql_->sstr.selection.aggre_num != 0) {
-    // todo(yqs): 基于executor建立agg_executor另行处理
+  if (selects->aggre_num != 0) {
+    assert(selects->relation_num == 1);
+    Table *table = DefaultHandler::get_default().find_table(db_->name(), selects->relations[0]);
+    TupleSchema output_schema;
+    AggExecutor::build_agg_output_schema(table, selects, output_schema);
+    executor = new AggExecutor(new ExecutorContext(), output_schema, executor);
   } else {
     executor->set_output_schema(build_output_schema(selects));
   }
@@ -49,6 +54,7 @@ TupleSchema ExecutorBuilder::build_output_schema(Selects *selects) {
   return output_schema;
 }
 
+
 /**
  * 只关注select {attrs} from {tables} where {conditions}, 该查询主要作为其他查询的基础
  * 此时仅关注与{tables}相关的{conditions}
@@ -63,7 +69,7 @@ Executor* ExecutorBuilder::build_select_executor(Selects *selects) {
   TupleSchema::from_table(table, output_schema0);
   std::vector<Filter*> filters0;
   bool ban_all0 = false;
-  Filter::from_condition_with_table(selects->conditions, selects->condition_num, table, filters0, ban_all0);
+  Filter::from_condition(selects->conditions, selects->condition_num, table, filters0, ban_all0, false, db_);
   Executor *left_executor = new ScanExecutor(context, table, output_schema0, std::move(filters0), ban_all0);
   Executor *right_executor;
 
@@ -73,27 +79,17 @@ Executor* ExecutorBuilder::build_select_executor(Selects *selects) {
     TupleSchema::from_table(table, output_schema);
     std::vector<Filter*> filters;
     bool ban_all = false;
-    Filter::from_condition_with_table(selects->conditions, selects->condition_num, table, filters, ban_all);
+    Filter::from_condition(selects->conditions, selects->condition_num, table, filters, ban_all, false, db_);
     right_executor = new ScanExecutor(context, table, output_schema, std::move(filters), ban_all);
 
     TupleSchema join_output_schema;
     join_output_schema.append(left_executor->output_schema());
     join_output_schema.append(right_executor->output_schema());
     std::vector<Filter*> join_filters;
-    Filter::from_condition(selects->conditions, selects->condition_num, join_filters, ban_all);
+    Filter::from_condition(selects->conditions, selects->condition_num, nullptr, join_filters, ban_all, true, db_);
     left_executor = new NestLoopJoinExecutor(context, join_output_schema, left_executor, right_executor, join_filters, ban_all);
   }
-  for (int i = 0; i < selects->condition_num; i++) {
-    Condition condition = selects->conditions[i];
-    if (condition.is_sub_select) {
-      right_executor = build(condition.selects);
-      if (condition.left_attr.relation_name == nullptr) {
-        assert(selects->relation_num == 1);
-        condition.left_attr.relation_name = selects->relations[0];
-      }
-      left_executor = new SubQueryExecutor(context, left_executor, condition.left_attr, condition.comp, right_executor);
-    }
-  }
+  left_executor = build_sub_query_executor(left_executor, selects->relations[0], selects->conditions, selects->condition_num);
   return left_executor;
 }
 
@@ -116,9 +112,9 @@ Executor* ExecutorBuilder::build_join_executor(Executor *executor, Selects *sele
     TupleSchema::from_table(table, output_schema);
     std::vector<Filter*> filters;
     bool ban_all = false;
-    Filter::from_condition_with_table(selects->joins[i].conditions, selects->joins[i].condition_num, table, filters, ban_all);
+    Filter::from_condition(selects->joins[i].conditions, selects->joins[i].condition_num, table, filters, ban_all, false, db_);
     if (!ban_all) {
-      Filter::from_condition_with_table(selects->conditions, selects->condition_num, table, filters, ban_all);
+      Filter::from_condition(selects->conditions, selects->condition_num, table, filters, ban_all, false, db_);
     }
     right_executor = new ScanExecutor(context, table, output_schema, std::move(filters), ban_all);
 
@@ -126,22 +122,65 @@ Executor* ExecutorBuilder::build_join_executor(Executor *executor, Selects *sele
     join_output_schema.append(left_executor->output_schema());
     join_output_schema.append(right_executor->output_schema());
     std::vector<Filter*> join_filters;
-    Filter::from_condition(selects->joins[i].conditions, selects->joins[i].condition_num, join_filters, ban_all, true);
+    Filter::from_condition(selects->joins[i].conditions, selects->joins[i].condition_num, nullptr, join_filters, ban_all, true, db_);
     if (i == 0 && !ban_all) { // 对于最后一个join，需要对join_condition和selects->condition中的条件一起进行过滤
-      Filter::from_condition(selects->conditions, selects->condition_num, join_filters, ban_all, true);
+      Filter::from_condition(selects->conditions, selects->condition_num, nullptr, join_filters, ban_all, true, db_);
     }
     left_executor = new NestLoopJoinExecutor(context, join_output_schema, left_executor, right_executor, join_filters, ban_all);
+    // sub query in join conditions
+    left_executor = build_sub_query_executor(left_executor, selects->relations[0], selects->joins[i].conditions, selects->joins[i].condition_num);
+  }
+  return left_executor;
+}
 
-    for (int j = 0; j < selects->joins[i].condition_num; j++) {
-      Condition condition = selects->joins[i].conditions[j];
-      if (condition.is_sub_select) {
-        right_executor = build(condition.selects);
-        if (condition.left_attr.relation_name == nullptr) {
-          assert(selects->relation_num == 1);
-          condition.left_attr.relation_name = selects->relations[0];
-        }
-        left_executor = new SubQueryExecutor(context, left_executor, condition.left_attr, condition.comp, right_executor);
+CompOp symmetric_op(CompOp op) {
+  switch(op) {
+  case EQUAL_TO:
+    return EQUAL_TO;
+  case LESS_EQUAL:
+    return GREAT_EQUAL;
+  case NOT_EQUAL:
+    return NOT_EQUAL;
+  case LESS_THAN:
+    return GREAT_THAN;
+  case GREAT_EQUAL:
+    return LESS_EQUAL;
+  case GREAT_THAN:
+    return LESS_THAN;
+  case IS:
+    return IS;
+  case IS_NOT:
+    return IS_NOT;
+  case IN_OP:
+    return IN_OP;
+  case NOT_IN_OP:
+    return NOT_IN_OP;
+  default:
+    return NO_OP;
+  }
+}
+
+Executor *ExecutorBuilder::build_sub_query_executor(Executor *executor, char *table_name, Condition conditions[], size_t condition_num) {
+  Executor *right_executor;
+  Executor *left_executor = executor;
+  for (int i = 0; i < condition_num; i++) {
+    Condition condition = conditions[i];
+    if (condition.left_is_select && condition.right_is_select) {
+      continue;
+    }
+    if (condition.left_is_select) {
+      right_executor = build(condition.left_selects);
+      if (condition.right_attr.relation_name == nullptr) {
+        condition.right_attr.relation_name = table_name;
       }
+      left_executor = new SubQueryExecutor(nullptr, left_executor, condition.right_attr, symmetric_op(condition.comp), right_executor);
+    }
+    if (condition.right_is_select) {
+      right_executor = build(condition.right_selects);
+      if (condition.left_attr.relation_name == nullptr) {
+        condition.left_attr.relation_name = table_name;
+      }
+      left_executor = new SubQueryExecutor(nullptr, left_executor, condition.left_attr, condition.comp, right_executor);
     }
   }
   return left_executor;

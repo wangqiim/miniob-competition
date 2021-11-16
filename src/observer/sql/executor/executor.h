@@ -6,6 +6,7 @@
 
 
 #include <storage/common/condition_filter.h>
+#include <storage/trx/trx.h>
 #include "tuple.h"
 
 class ExecutorContext {

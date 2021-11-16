@@ -52,11 +52,15 @@ struct ValueHash {
 RC SubQueryExecutor::next(TupleSet &tuple_set, std::vector<Filter*> *filters) {
   tuple_set.set_schema(output_schema_);
   TupleSet left_tuple_set;
-  left_executor_->next(left_tuple_set);
+  RC rc = left_executor_->next(left_tuple_set);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
   TupleSet right_tuple_set;
-  right_executor_->next(right_tuple_set);
-
-  std::map<std::string, std::map<std::string, int>> right_table_field_index = right_tuple_set.get_schema().table_field_index();
+  rc = right_executor_->next(right_tuple_set);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
   int right_field_index = 0;
 
   std::map<std::string, std::map<std::string, int>> left_table_field_index = left_tuple_set.get_schema().table_field_index();

@@ -54,8 +54,23 @@ public:
   }
 
   int compare(TupleValue &other) const override {
-    int other_value = (int)(*(float*)other.value_pointer());
-    return value_ - other_value;
+    if (other.Type() == FLOATS) {
+      float this_value = (float)value_;
+      float other_value = (*(float*)other.value_pointer());
+      float result = this_value - other_value;
+      if (-1e-5 < result && result < 1e-5) {
+        return 0;
+      }
+      if (result > 0) { // 浮点数没有考虑精度问题
+        return 1;
+      }
+      if (result < 0) {
+        return -1;
+      }
+    } else {
+      int other_value = *(int*)other.value_pointer();
+      return value_ - other_value;
+    }
   }
 
   void plus(float val) override { value_ += val; }

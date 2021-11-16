@@ -85,8 +85,8 @@ RC SubQueryExecutor::next(TupleSet &tuple_set, std::vector<Filter*> *filters) {
     left_value = left_tuple.get_pointer(left_field_index);
     bool valid;
     if (op_ == IN_OP || op_ == NOT_IN_OP) { // in (select xxx) or not in (select xxx)
-      bool find = tuple_value_set.find(left_value) == tuple_value_set.end();
-      valid = ((op_ == IN_OP && find) || (op_ == NOT_IN_OP && !find));
+      int count = tuple_value_set.count(left_value);
+      valid = ((op_ == IN_OP && count != 0) || (op_ == NOT_IN_OP && count == 0));
     } else { // [=,<,>,...] (select xxx)
       valid = compare_result(left_value->compare(**tuple_value_set.begin()), op_);
     }

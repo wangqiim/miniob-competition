@@ -410,9 +410,15 @@ value:
 		value_init_null(&CONTEXT->values[CONTEXT->value_length++]);
 		}
     ;
-    
+
+delete_begin:
+    DELETE {
+    	CONTEXT->select_length++;
+    }
+    ;
+
 delete:		/*  delete 语句的语法解析树*/
-    DELETE FROM ID where SEMICOLON 
+    delete_begin FROM ID where SEMICOLON
 		{
 			CONTEXT->ssql->flag = SCF_DELETE;//"delete";
 			deletes_init_relation(&CONTEXT->ssql->sstr.deletion, $3);
@@ -421,8 +427,15 @@ delete:		/*  delete 语句的语法解析树*/
 			CONTEXT->condition_length[0] = 0;
     }
     ;
+
+update_begin:
+   UPDATE {
+   	CONTEXT->select_length++;
+   }
+   ;
+
 update:			/*  update 语句的语法解析树*/
-    UPDATE ID SET ID EQ value where SEMICOLON
+    update_begin ID SET ID EQ value where SEMICOLON
 		{
 			CONTEXT->ssql->flag = SCF_UPDATE;//"update";
 			Value *value = &CONTEXT->values[0];
@@ -664,6 +677,39 @@ join_condition:
     			// $$->right_value = *$3;
 
     		}
+    | ID comOp right_sub_select {
+    	RelAttr left_attr;
+    	relation_attr_init(&left_attr, NULL, $1);
+    	Condition condition;
+    	condition_init(&condition, CONTEXT->comp[CONTEXT->select_length-1], 1, &left_attr, NULL, 0, NULL, NULL, NULL, &CONTEXT->right_sub_select);
+    	CONTEXT->join_conditions[CONTEXT->select_length-1][CONTEXT->condition_length[CONTEXT->select_length-1]++] = condition;
+    	}
+    | left_sub_select comOp ID {
+    	RelAttr right_attr;
+    	relation_attr_init(&right_attr, NULL, $3);
+    	Condition condition;
+    	condition_init(&condition, CONTEXT->comp[CONTEXT->select_length-1], 0, NULL, NULL, 1, &right_attr, NULL, &CONTEXT->left_sub_select, NULL);
+    	CONTEXT->join_conditions[CONTEXT->select_length-1][CONTEXT->condition_length[CONTEXT->select_length-1]++] = condition;
+        }
+    | ID DOT ID comOp right_sub_select {
+        RelAttr left_attr;
+        relation_attr_init(&left_attr, $1, $3);
+        Condition condition;
+        condition_init(&condition, CONTEXT->comp[CONTEXT->select_length-1], 1, &left_attr, NULL, 0, NULL, NULL, NULL, &CONTEXT->right_sub_select);
+        CONTEXT->join_conditions[CONTEXT->select_length-1][CONTEXT->condition_length[CONTEXT->select_length-1]++] = condition;
+    }
+    | left_sub_select comOp ID DOT ID {
+        RelAttr right_attr;
+        relation_attr_init(&right_attr, $3, $5);
+        Condition condition;
+        condition_init(&condition, CONTEXT->comp[CONTEXT->select_length-1], 0, NULL, NULL, 1, &right_attr, NULL, &CONTEXT->left_sub_select, NULL);
+        CONTEXT->join_conditions[CONTEXT->select_length-1][CONTEXT->condition_length[CONTEXT->select_length-1]++] = condition;
+    }
+    |  left_sub_select  comOp right_sub_select {
+        Condition condition;
+        condition_init(&condition, CONTEXT->comp[CONTEXT->select_length-1], 0, NULL, NULL, 0, NULL, NULL, &CONTEXT->left_sub_select, &CONTEXT->right_sub_select);
+        CONTEXT->join_conditions[CONTEXT->select_length-1][CONTEXT->condition_length[CONTEXT->select_length-1]++] = condition;
+    }
     ;
 where:
     /* empty */ 

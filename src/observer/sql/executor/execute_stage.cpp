@@ -259,15 +259,12 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
 
   switch (sql->flag) {
     case SCF_SELECT: { // select
-      
       const Selects &selects = sql->sstr.selection;
-
-//      if (selects.aggre_num > 0 || selects.order_num > 0 || selects.group_num > 0) {
-//        rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
-//      } else {
-//        rc = do_select_v2(current_db, sql, exe_event->sql_event()->session_event());
-//      }
-      rc = do_select_v2(current_db, sql, exe_event->sql_event()->session_event());
+      if (selects.order_num > 0 || selects.group_num > 0) {
+        rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
+      } else {
+        rc = do_select_v2(current_db, sql, exe_event->sql_event()->session_event());
+      }
 
       if (rc != RC::SUCCESS) {
         session_event->set_response("FAILURE\n");

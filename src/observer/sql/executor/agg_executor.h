@@ -50,7 +50,7 @@ public:
     return {vals, counts};
   }
 
-  static RC build_agg_output_schema(Table *table, Selects *selects, TupleSchema &schema);
+  static RC build_agg_output_schema(Db *db, Selects *selects, TupleSchema &schema);
 
 private:
 

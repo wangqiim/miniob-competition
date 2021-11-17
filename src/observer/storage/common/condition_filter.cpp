@@ -233,7 +233,13 @@ bool DefaultConditionFilter::filter(const Record &rec) const
     case FLOATS: {
       float left = *(float *)left_value;
       float right = *(float *)right_value;
-      cmp_result = (int)(left - right);
+      // 考虑了浮点数比较的精度问题
+      float sub = left - right;
+      if (sub < 1e-6 && sub > -1e-6) {
+        cmp_result = 0;
+      } else {
+        cmp_result = (sub > 0 ? 1: -1);
+      }
     } break;
     case DATES: {  // 字符串日期已经被格式化了，可以直接比较
       // 按照C字符串风格来定
@@ -517,7 +523,13 @@ bool Filter::filter(const Record &rec) const {
     case FLOATS: {
       float left = *(float *)left_value;
       float right = *(float *)right_value;
-      cmp_result = (int)(left - right);
+      // 考虑了浮点数比较的精度问题
+      float sub = left - right;
+      if (sub < 1e-6 && sub > -1e-6) {
+        cmp_result = 0;
+      } else {
+        cmp_result = (sub > 0 ? 1: -1);
+      }
     } break;
     case DATES: {  // 字符串日期已经被格式化了，可以直接比较
       // 按照C字符串风格来定

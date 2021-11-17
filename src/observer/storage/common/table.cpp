@@ -791,6 +791,7 @@ static RC record_reader_delete_adapter(Record *record, void *context) {
 RC Table::delete_record(Trx *trx, ConditionFilter *filter, int *deleted_count) {
   RecordDeleter deleter(*this, trx);
   RC rc = scan_record(trx, filter, -1, &deleter, record_reader_delete_adapter);
+  assert(rc == RC::SUCCESS);
   if (deleted_count != nullptr) {
     *deleted_count = deleter.deleted_count();
   }

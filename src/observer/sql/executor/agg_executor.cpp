@@ -52,12 +52,11 @@ RC AggExecutor::next(TupleSet &tuple_set, std::vector<Filter*> *filters) {
   return RC::SUCCESS;
 }
 
-RC AggExecutor::build_agg_output_schema(Table *table, Selects *selects, TupleSchema &schema) {
-  assert(selects->relation_num == 1);
+RC AggExecutor::build_agg_output_schema(Db *db, Selects *selects, TupleSchema &schema) {
   assert(selects->aggre_num > 0);
-  assert(strcmp(table->name(), selects->relations[0]) == 0);
   std::vector<std::shared_ptr<AggreDesc>> aggre_descs;
   // 枚举所有聚集函数
+  Table *table;
   for (int i = 0; i < selects->aggre_num; i++) {
     Aggregate select_agg = selects->aggregates[i];
     std::shared_ptr<AggreDesc> aggre_desc(new AggreDesc());
@@ -65,8 +64,16 @@ RC AggExecutor::build_agg_output_schema(Table *table, Selects *selects, TupleSch
     aggre_desc->is_attr = select_agg.is_attr;
     aggre_desc->is_star = 0;
     if (select_agg.is_attr == 1) {
+      aggre_desc->relation_name = select_agg.attr.relation_name;
       // 属性：检验字段和表名
-      aggre_desc->relation_name = const_cast<char*>(table->name());
+      if (aggre_desc->relation_name == nullptr) {
+        if (selects->relation_num == 1) {
+          aggre_desc->relation_name = selects->relations[0];
+        } else {
+          return RC::INTERNAL;
+        }
+      }
+      table = db->find_table(aggre_desc->relation_name);
       if (select_agg.attr.attribute_name != 0 && 0 == strcmp("*", select_agg.attr.attribute_name)) {
         if (select_agg.aggre_type != AggreType::COUNTS) {
           // 只有COUNT能匹配*
@@ -111,6 +118,14 @@ RC AggExecutor::build_agg_output_schema(Table *table, Selects *selects, TupleSch
     aggre_descs.emplace_back(std::move(aggre_desc));
   }
   for (int i = 0; i < selects->group_num; i++) {
+    if (selects->group_bys[i].relation_name == nullptr) {
+      if (selects->relation_num == 1) {
+        selects->group_bys[i].relation_name = selects->relations[0];
+      } else {
+        return RC::INTERNAL;
+      }
+    }
+    table = db->find_table(selects->group_bys[i].relation_name);
     TupleSchema::schema_add_field(table ,selects->group_bys[i].attribute_name, schema);
   }
   schema.Set_agg_descs(std::move(aggre_descs));

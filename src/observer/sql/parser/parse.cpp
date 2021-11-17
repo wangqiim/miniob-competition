@@ -109,11 +109,19 @@ void clear_selects(Selects *selects) {
 // 先判 select再判attr再判val，最后判定表达式(ast)
 void condition_init(Condition *condition, CompOp comp, ast *left, ast *right,
                         Selects *left_selects, Selects *right_selects) {
-  condition->comp = comp;
-  condition->left_ast = nullptr;
-  condition->right_ast = nullptr;
+  condition->left_is_attr = 0;
+  condition->left_is_select = 0;
+  condition->left_value.data = nullptr;
   condition->left_selects = nullptr;
+  condition->left_ast = nullptr;
+
+  condition->right_is_attr = 0;
+  condition->right_is_select = 0;
+  condition->right_value.data = nullptr;
   condition->right_selects = nullptr;
+  condition->right_ast = nullptr;
+
+  condition->comp = comp;
 
   if (left_selects) {
     condition->left_selects = new Selects_();

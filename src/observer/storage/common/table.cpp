@@ -495,6 +495,7 @@ RC Table::scan_record_by_index(Trx *trx, IndexScanner *scanner, ConditionFilter 
     }
 
     rc = record_handler_->get_record(&rid, &record);
+    assert(rc == RC::SUCCESS); // 索引页中存在的record 一定也在数据页中
     if (rc != RC::SUCCESS) {
       LOG_ERROR("Failed to fetch record of rid=%d:%d, rc=%d:%s", rid.page_num, rid.slot_num, rc, strrc(rc));
       break;

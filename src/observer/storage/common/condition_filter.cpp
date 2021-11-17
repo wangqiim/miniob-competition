@@ -466,9 +466,15 @@ RC Filter::bind_table(Table *table) {
     right_.value = value;
   }
 
-  // 注意:如果到这里函数还没有返回，能继续执行，说明保证如果conditon中attr字段格式一定能和table_meta匹配
-  if ((left_.value.type == DATES && theGlobalDateUtil()->Check_and_format_date(left_.value.data) != RC::SUCCESS) ||
-      (right_.value.type == DATES && theGlobalDateUtil()->Check_and_format_date(left_.value.data) != RC::SUCCESS)) {
+  // 对出现的日期condtition进行格式化
+  if (left_.is_attr == 1 && left_.value.type == DATES && right_.is_attr == 0 && right_.value.type == CHARS) {
+    right_.value.type = DATES;
+  }
+  if (right_.is_attr == 1 && right_.value.type == DATES && left_.is_attr == 0 && left_.value.type == CHARS) {
+    left_.value.type = DATES;
+  }
+  if ((left_.is_attr == 0 && left_.value.type == DATES && theGlobalDateUtil()->Check_and_format_date(left_.value.data) != RC::SUCCESS) ||
+      (right_.is_attr == 0 && right_.value.type == DATES && theGlobalDateUtil()->Check_and_format_date(right_.value.data) != RC::SUCCESS)) {
     LOG_WARN("date type filter condition schema mismatch.");
     return  RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
@@ -560,6 +566,7 @@ void  Filter::from_condition(Condition *conditions, size_t condition_num, Table 
     left_filter_desc.is_attr = (condition.left_is_attr == 1);
     FilterDesc right_filter_desc;
     right_filter_desc.is_attr = (condition.right_is_attr == 1);
+    // 1. left & right 都是子查询
     if ((!condition.left_is_attr || condition.left_is_select) &&
         (!condition.right_is_attr || condition.right_is_select)) {
       std::shared_ptr<TupleValue> left_value;
@@ -588,10 +595,12 @@ void  Filter::from_condition(Condition *conditions, size_t condition_num, Table 
       }
     }
 
+    // 2. left 是子查询 或者 right是子查询
     if (condition.left_is_select || condition.right_is_select) {
       continue;
     }
 
+    // 3. left 和 right两边都不是子查询
     if (left_filter_desc.is_attr) {
       if (table != nullptr && condition.left_attr.relation_name != nullptr && strcmp(condition.left_attr.relation_name, table->name()) != 0) {
         continue;

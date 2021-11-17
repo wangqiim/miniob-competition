@@ -486,6 +486,7 @@ RC Table::scan_record_by_index(Trx *trx, IndexScanner *scanner, ConditionFilter 
   int record_count = 0;
   while (record_count < limit) {
     rc = scanner->next_entry(&rid);
+    assert(rc == RC::SUCCESS || rc == RC::RECORD_EOF);
     if (rc != RC::SUCCESS) {
       if (RC::RECORD_EOF == rc) {
         rc = RC::SUCCESS;
@@ -791,7 +792,6 @@ static RC record_reader_delete_adapter(Record *record, void *context) {
 RC Table::delete_record(Trx *trx, ConditionFilter *filter, int *deleted_count) {
   RecordDeleter deleter(*this, trx);
   RC rc = scan_record(trx, filter, -1, &deleter, record_reader_delete_adapter);
-  assert(rc == RC::SUCCESS);
   if (deleted_count != nullptr) {
     *deleted_count = deleter.deleted_count();
   }

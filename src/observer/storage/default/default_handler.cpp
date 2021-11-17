@@ -170,6 +170,7 @@ RC DefaultHandler::delete_record(Trx *trx, const char *dbname, const char *relat
 
   CompositeConditionFilter condition_filter;
   RC rc = condition_filter.init(*table, conditions, condition_num);
+  assert(rc == RC::SUCCESS);
   if (rc != RC::SUCCESS) {
     return rc;
   }

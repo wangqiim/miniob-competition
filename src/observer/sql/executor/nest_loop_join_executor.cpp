@@ -12,7 +12,20 @@ NestLoopJoinExecutor::NestLoopJoinExecutor(ExecutorContext* context, const Tuple
                                      bool ban_all):
                                      Executor(context, output_schema),
                                      left_executor_(left_executor), right_executor_(right_executor),
-                                     condition_filters_(std::move(condition_filters)), ban_all_(ban_all) {};
+                                     condition_filters_(), ban_all_(ban_all) {
+  // 在select * from t1, t2, t3 where t2.id = t3.id; 
+  // 上述语句中，t2.id 这个条件同时塞到了(t1, t2) 和((t1, t2), t3)两个excutor中，因此这里需要过滤
+  for (Filter * filter : condition_filters) {
+    // 如果条件是属性，必须在该节点关联的表中
+    if (filter->left().is_attr && ((TupleSchema &)output_schema).table_field_index().count(filter->left().table_name) == 0) {
+      continue;
+    }
+    if (filter->right().is_attr && ((TupleSchema &)output_schema).table_field_index().count(filter->right().table_name) == 0) {
+      continue;
+    }
+    condition_filters_.push_back(filter);
+  }
+};
 
 RC NestLoopJoinExecutor::init() {
   RC rc;

@@ -180,6 +180,8 @@ public:
 
   static void from_condition(Condition *conditions, size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all, bool attr_only=false, Db *db=nullptr);
 
+  FilterDesc &left() { return left_; }
+  FilterDesc &right() { return right_; }
 private:
   FilterDesc  left_;
   FilterDesc  right_;

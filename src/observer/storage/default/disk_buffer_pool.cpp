@@ -320,6 +320,12 @@ RC DiskBufferPool::allocate_page(int file_id, BPPageHandle *page_handle)
 
 
   bp_manager_.AddPageTable(file_handle->file_desc, page_handle->frame->page.page_num, bp_manager_.GetFrameID(page_handle->frame));
+  
+  // fileSubHeader的page_count数量变化了应该立即刷新到磁盘
+  if ((tmp = flush_block(file_handle->hdr_frame)) != RC::SUCCESS) {
+    LOG_ERROR("DiskBufferPool::allocate_page Failed to flush_block.");
+    return tmp;
+  }
   // Use flush operation to extion file
   if ((tmp = flush_block(page_handle->frame)) != RC::SUCCESS) {
     LOG_ERROR("Failed to alloc page %s , due to failed to extend one page.", file_handle->file_name);

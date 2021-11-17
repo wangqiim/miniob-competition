@@ -95,6 +95,9 @@ QUOTE            [\'\"]
 "("								                       RETURN_TOKEN(LBRACE);
 ")"								                       RETURN_TOKEN(RBRACE);
 
+"+"                                      RETURN_TOKEN(ADD);
+"-"                                      RETURN_TOKEN(SUB);
+"/"                                      RETURN_TOKEN(DIV);
 ","                                      RETURN_TOKEN(COMMA);
 "="                                      RETURN_TOKEN(EQ);
 "<="                                     RETURN_TOKEN(LE);

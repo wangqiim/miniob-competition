@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #define __OBSERVER_SQL_PARSER_PARSE_DEFS_H__
 
 #include <stddef.h>
+#include <assert.h>
 
 #define MAX_NUM 20
 #define MAX_REL_NAME 20
@@ -59,6 +60,17 @@ typedef enum { UNDEFINEDAGG, MAXS, MINS, AVGS, SUMS, COUNTS } AggreType;
 //Join类型
 typedef enum { INNER_JOIN, OUTER_JOIN, LEFT_JOIN, RIGHT_JOIN } JoinType;
 
+// ast类型
+typedef enum { ADDN, SUBN, MULN, DIVN, VALN, ATTRN } NodeType;
+
+typedef struct ast {
+  NodeType nodetype;
+  int l_brace;
+  int r_brace;
+  struct ast *l;
+  struct ast *r;
+} ast;
+
 //属性值
 typedef struct _Value {
   AttrType type;  // type of value
@@ -69,6 +81,8 @@ typedef struct _Value {
 struct Selects_;
 
 typedef struct _Condition {
+  ast *left_ast;  // 如果left_ast非nullptr时，用left_is_attr，这样方便对原逻辑做兼容
+  ast *right_ast;  // 如果left_ast非nullptr时，用right_is_attr，这样方便对原逻辑做兼容
   int left_is_attr;    // TRUE if left-hand side is an attribute
                        // 1时，操作符左边是属性名，0时，是属性值
   Value left_value;    // left-hand side value if left_is_attr = FALSE
@@ -117,6 +131,8 @@ typedef struct Selects_ {
   Aggregate aggregates[MAX_NUM];    // Length(num) of aggre func in Select clause
   size_t    attr_num;               // Length of attrs in Select clause
   RelAttr   attributes[MAX_NUM];    // attrs in Select clause
+  size_t    attr_exp_num;           // 目前仅仅考虑先普通列再表达式的情况，例如 select col1,3,4;则attr_num=1,attr_exp_num=2
+  ast *     attributes_exp[MAX_NUM]; 
   size_t    relation_num;           // Length of relations in Fro clause
   char *    relations[MAX_NUM];     // relations in From clause
   size_t    join_num;
@@ -200,6 +216,20 @@ typedef struct {
   const char *file_name;
 } LoadData;
 
+typedef struct valnode {
+  NodeType nodetype;
+  int l_brace;
+  int r_brace;
+  Value value;
+} valnode;
+
+typedef struct attrnode {
+  NodeType nodetype;
+  int l_brace;
+  int r_brace;
+  RelAttr attr;
+} attrnode;
+
 union Queries {
   Selects selection;
   Inserts insertion;
@@ -259,10 +289,8 @@ void value_destroy(Value *value);
 
 void show_selects(Selects selects[], int select_index);
 void clear_selects(Selects *selects);
-void condition_init(Condition *condition, CompOp comp,
-                    int left_is_attr, RelAttr *left_attr, Value *left_value,
-                    int right_is_attr, RelAttr *right_attr, Value *right_value,
-                    Selects *left_selects, Selects *right_selects);
+
+void condition_init(Condition *condition, CompOp comp, ast *left, ast *right, Selects *left_selects, Selects *right_selects);
 void condition_destroy(Condition *condition);
 
 void attr_info_init(AttrInfo *attr_info, const char *name, AttrType type, size_t length, int nullable);
@@ -317,6 +345,11 @@ void query_init(Query *query);
 Query *query_create();  // create and init
 void query_reset(Query *query);
 void query_destroy(Query *query);  // reset and delete
+
+void selects_append_attribute_expression(Selects *selects, ast *a);
+ast *newast(NodeType nodetype, ast *l, ast *r);
+ast *newvalNode(Value *val);
+ast *newattrNode(RelAttr *attr);
 
 #ifdef __cplusplus
 }

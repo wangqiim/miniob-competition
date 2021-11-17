@@ -106,48 +106,44 @@ void clear_selects(Selects *selects) {
   selects->group_num = 0;
 }
 
-void condition_init(Condition *condition, CompOp comp, 
-                    int left_is_attr, RelAttr *left_attr, Value *left_value,
-                    int right_is_attr, RelAttr *right_attr, Value *right_value,
-                    Selects *left_selects, Selects *right_selects) {
-  condition->left_is_attr = 0;
-  condition->left_value.data = nullptr;
-  condition->left_is_select = 0;
-  condition->left_selects = nullptr;
-  condition->right_is_attr = 0;
-  condition->right_value.data = nullptr;
-  condition->right_is_select = 0;
-  condition->right_selects = nullptr;
-
+// 先判 select再判attr再判val，最后判定表达式(ast)
+void condition_init(Condition *condition, CompOp comp, ast *left, ast *right,
+                        Selects *left_selects, Selects *right_selects) {
   condition->comp = comp;
+  condition->left_ast = nullptr;
+  condition->right_ast = nullptr;
+  condition->left_selects = nullptr;
+  condition->right_selects = nullptr;
 
   if (left_selects) {
     condition->left_selects = new Selects_();
     *condition->left_selects = *left_selects;
     condition->left_is_select = 1;
+  } else if (left->nodetype == NodeType::ATTRN) {
+    condition->left_is_attr = 1;
+    condition->left_attr = ((attrnode *)left)->attr;
+  } else if (left->nodetype == NodeType::VALN) {
+    condition->left_is_attr = 0;
+    condition->left_value = ((valnode *)left)->value;
   } else {
-    condition->left_is_attr = left_is_attr;
-    if (left_is_attr) {
-      condition->left_attr = *left_attr;
-    } else {
-      condition->left_value = *left_value;
-    }
+    condition->left_ast = left;
   }
 
   if (right_selects) {
     condition->right_selects = new Selects_();
     *condition->right_selects = *right_selects;
     condition->right_is_select = 1;
+  } else if (right->nodetype == NodeType::ATTRN) {
+    condition->right_is_attr = 1;
+    condition->right_attr = ((attrnode *)right)->attr;
+  } else if (right->nodetype == NodeType::VALN) {
+    condition->right_is_attr = 0;
+    condition->right_value = ((valnode *)right)->value;
   } else {
-    condition->right_is_attr = right_is_attr;
-    if (right_is_attr) {
-      condition->right_attr = *right_attr;
-    } else {
-      condition->right_value = *right_value;
-    }
+    condition->right_ast = right;
   }
-
 }
+
 void condition_destroy(Condition *condition) {
   if (condition->left_is_attr) {
     relation_attr_destroy(&condition->left_attr);
@@ -511,6 +507,43 @@ void query_destroy(Query *query) {
   query_reset(query);
   free(query);
 }
+
+void selects_append_attribute_expression(Selects *selects, ast *a) {
+  if (a->nodetype == NodeType::ATTRN) {
+    selects_append_attribute(selects, &(((attrnode *)a)->attr));
+    return;
+  }
+  selects->attributes_exp[selects->attr_exp_num++] = a;
+}
+
+ast *newast(NodeType nodetype, ast *l, ast *r) {
+  ast *a = (ast *)malloc(sizeof(ast));
+  a->nodetype = nodetype; // ADD,SUB,MUL,DIV
+  a->l_brace = 0;
+  a->r_brace = 0;
+  a->l = l;
+  a->r = r;
+  return a;
+}
+
+ast *newvalNode(Value *val) {
+  valnode *a = (valnode *)malloc(sizeof(valnode));
+  a->nodetype = NodeType::VALN;
+  a->l_brace = 0;
+  a->r_brace = 0;
+  a->value = *val;
+  return (ast *)a;
+}
+
+ast *newattrNode(RelAttr *attr) {
+  attrnode *a = (attrnode *)malloc(sizeof(attrnode));
+  a->nodetype = NodeType::ATTRN;
+  a->l_brace = 0;
+  a->r_brace = 0;
+  a->attr = *attr;
+  return (ast *)a;
+}
+
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus

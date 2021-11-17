@@ -50,6 +50,20 @@ struct ValueHash {
 };
 
 RC SubQueryExecutor::next(TupleSet &tuple_set, std::vector<Filter*> *filters) {
+  // pre check
+  if (op_ != IN_OP && op_ != NOT_IN_OP) {
+    if (right_executor_->output_schema().fields().size() != 0) {
+      return RC::INTERNAL;
+    }
+    if (right_executor_->output_schema().Get_agg_descs().size() == 0) {
+      return RC::INTERNAL;
+    }
+  } else { // in or not in
+    if (right_executor_->output_schema().fields().size() > 0 && right_executor_->output_schema().fields().size() != 1) {
+      return RC::INTERNAL;
+    }
+  }
+
   tuple_set.set_schema(output_schema_);
   TupleSet left_tuple_set;
   RC rc = left_executor_->next(left_tuple_set);
@@ -62,25 +76,10 @@ RC SubQueryExecutor::next(TupleSet &tuple_set, std::vector<Filter*> *filters) {
     return rc;
   }
 
-  if (op_ != IN_OP && op_ != NOT_IN_OP) {
-    if (output_schema_.fields().size() != 0) {
-      return RC::INTERNAL;
-    }
-    if (output_schema_.Get_agg_descs().size() == 0) {
-      return RC::INTERNAL;
-    }
-    if (right_tuple_set.size() == 0) {
-      return RC::SUCCESS;
-    }
-  } else { // in or not in
-    if (output_schema_.fields().size() > 0 && output_schema_.fields().size() != 1) {
-      return RC::INTERNAL;
-    }
-  }
-
-  if (op_ != IN_OP && op_ != NOT_IN_OP && right_tuple_set.size() == 0) {
+  if (left_tuple_set.size() == 0 || (op_ != IN_OP && op_ != NOT_IN_OP && right_tuple_set.size() == 0)) {
     return RC::SUCCESS;
   }
+
   int right_field_index = 0;
 
   std::map<std::string, std::map<std::string, int>> left_table_field_index = left_tuple_set.get_schema().table_field_index();

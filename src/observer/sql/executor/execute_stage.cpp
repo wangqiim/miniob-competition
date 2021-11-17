@@ -235,6 +235,19 @@ RC pre_check(const char *db, Query *sql, SessionEvent *session_event) {
   return RC::SUCCESS;
 }
 
+bool select_with_join_or_subselect(Query *sql) {
+  const Selects &selects = sql->sstr.selection;
+  if (selects.join_num > 0) {
+    return true;
+  }
+  for (int i = 0; i < selects.condition_num; i++) {
+    if (selects.conditions[i].left_is_select || selects.conditions[i].right_is_select) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void ExecuteStage::handle_request(common::StageEvent *event) {
   RC rc;
   ExecutionPlanEvent *exe_event = static_cast<ExecutionPlanEvent *>(event);
@@ -260,10 +273,11 @@ void ExecuteStage::handle_request(common::StageEvent *event) {
   switch (sql->flag) {
     case SCF_SELECT: { // select
       const Selects &selects = sql->sstr.selection;
-      if (selects.order_num > 0 || selects.group_num > 0) {
-        rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
-      } else {
+      bool use_v2 = select_with_join_or_subselect(sql);
+      if (use_v2) {
         rc = do_select_v2(current_db, sql, exe_event->sql_event()->session_event());
+      } else {
+        rc = do_select(current_db, sql, exe_event->sql_event()->session_event());
       }
 
       if (rc != RC::SUCCESS) {

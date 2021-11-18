@@ -76,11 +76,7 @@ RC SubQueryExecutor::next(TupleSet &tuple_set, std::vector<Filter*> *filters) {
     return rc;
   }
 
-  if (op_ != IN_OP && op_ != NOT_IN_OP && right_tuple_set.size() == 0) {
-    return RC::INTERNAL;
-  }
-
-  if (left_tuple_set.size() == 0) {
+  if (left_tuple_set.size() == 0 || (op_ != IN_OP && op_ != NOT_IN_OP && right_tuple_set.size() == 0)) {
     return RC::SUCCESS;
   }
 

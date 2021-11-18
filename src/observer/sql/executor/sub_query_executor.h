@@ -17,11 +17,16 @@ public:
                    Executor *left_executor,
                    RelAttr left_attr,
                    CompOp op,
-                   Executor *right_executor);
+                   Executor *right_executor,
+                   std::vector<Condition> &&multi_table_conditions);
 
   ~SubQueryExecutor() = default;
 
   RC init() override;
+
+  RC add_multi_table_filter(const TupleField &field, TupleValue &value, std::vector<Filter*> *filters);
+
+  RC remove_multi_table_filter(std::vector<Filter*> *filters, size_t num);
 
   RC next(TupleSet &tuple_set, std::vector<Filter*> *filters = nullptr) override;
 
@@ -30,6 +35,7 @@ private:
   RelAttr left_attr_;
   CompOp op_;
   Executor *right_executor_;
+  std::vector<Condition> multi_table_conditions_;
 };
 
 

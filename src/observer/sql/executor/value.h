@@ -36,6 +36,7 @@ public:
   /* 只有float int会用到 */
   virtual float value() = 0;
 
+  virtual void set_value(void *v) = 0;
 
   AttrType Type() const { return type_;}
   void SetType(AttrType type) { type_ = type; }
@@ -51,6 +52,10 @@ public:
 
   void to_string(std::ostream &os) const override {
     os << value_;
+  }
+
+  void set_value(void *v) {
+    value_ = *(int*)v;
   }
 
   int compare(TupleValue &other) const override {
@@ -107,6 +112,10 @@ public:
     os << s;
   }
 
+  void set_value(void *v) {
+    value_ = *(float*)v;
+  }
+
   void *value_pointer() override {
     return &value_;
   }
@@ -153,6 +162,10 @@ public:
     return &value_;
   }
 
+  void set_value(void *v) {
+    value_ = *(std::string*)v;
+  }
+
   int compare(TupleValue &other) const override {
     const StringValue &string_other = (const StringValue &)other;
     return strcmp(value_.c_str(), string_other.value_.c_str());
@@ -181,6 +194,9 @@ public:
   }
   void *value_pointer() {
     return nullptr;
+  }
+
+  void set_value(void *v) {
   }
 
   void plus(float val) override { assert(false); }

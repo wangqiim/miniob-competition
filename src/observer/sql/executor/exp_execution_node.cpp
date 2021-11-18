@@ -71,7 +71,7 @@ RC create_expression_executor(const Selects &selects, ExpExeNode &exp_exe_node, 
     composite_condition_filter->init(std::move(condition_filters), condition_filters.size() > 0);
 
     // 构造schema表头中的表达式
-    for (int i = 0; i < selects.attr_exp_num; i++) {
+    for (int i = selects.attr_exp_num - 1; i >= 0; i--) {
         output_schema.add_exp(selects.attributes_exp[i]);
     }
     

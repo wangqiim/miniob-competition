@@ -140,8 +140,10 @@ RC AstUtil::Print(std::string &str, ast *a) {
     case NodeType::SUBN:;
     case NodeType::MULN:;
     case NodeType::DIVN: {
-        rc = Print(str, a->l);
-        assert(rc == RC::SUCCESS);
+        if (a->l != nullptr) {
+            rc = Print(str, a->l);
+            assert(rc == RC::SUCCESS);
+        }
         rc = PrintNodeType(str, a->nodetype);
         assert(rc == RC::SUCCESS);
         rc = Print(str, a->r);

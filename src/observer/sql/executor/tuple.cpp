@@ -151,13 +151,14 @@ int TupleSchema::index_of_field(const char *table_name, const char *field_name) 
 
 
 /**
- * 有两种schema，一种是纯字段，一种是字段+聚集
+ * 有三种schema，一种是纯字段，一种是字段+聚集，一种是字段+表达式，并且顺序固定即表达式和聚集一定在纯字段后面
  * 例子:  id | name | age
  * 例子:  id | name | sum(age) | count(age)
+ * 例子:  id | id + 1 | id * age
  * 单表时字段不带表名，比较特殊
  **/
 void TupleSchema::print(std::ostream &os, bool multi_table) const {
-  if (fields_.empty() && agg_descs_.empty()) {
+  if (fields_.empty() && agg_descs_.empty() && exps_.empty()) {
     LOG_ERROR("unexpected tuple schema");
     return;
   }
@@ -175,7 +176,7 @@ void TupleSchema::print(std::ostream &os, bool multi_table) const {
     }
     os << fields_.back().field_name();
 
-    if (agg_descs_.empty()) {
+    if (agg_descs_.empty() && exps_.empty()) {
       os << std::endl;
     } else {
       // 继续打印aggregate头
@@ -183,18 +184,29 @@ void TupleSchema::print(std::ostream &os, bool multi_table) const {
     }
   }
   if (!agg_descs_.empty()) {
-      int aggre_num = agg_descs_.size();
-      for (int i = 0; i < aggre_num - 1 ; i++) {
-        aggre_type_print(os, agg_descs_.at(i)->aggre_type);
-        os << "(";
-        aggre_attr_print(os, i);
-        os << ") | ";
-      }
-      const AggreDesc * last_aggre = agg_descs_.at(aggre_num - 1).get();
-      aggre_type_print(os, agg_descs_.at(aggre_num - 1)->aggre_type);
+    int aggre_num = agg_descs_.size();
+    for (int i = 0; i < aggre_num - 1 ; i++) {
+      aggre_type_print(os, agg_descs_.at(i)->aggre_type);
       os << "(";
-      aggre_attr_print(os, aggre_num - 1);
-      os << ")" << std::endl;
+      aggre_attr_print(os, i);
+      os << ") | ";
+    }
+    const AggreDesc * last_aggre = agg_descs_.at(aggre_num - 1).get();
+    aggre_type_print(os, agg_descs_.at(aggre_num - 1)->aggre_type);
+    os << "(";
+    aggre_attr_print(os, aggre_num - 1);
+    os << ")" << std::endl;
+  }
+  if (!exps_.empty()) {
+    int attr_exp_num = exps_.size();
+    for (int i = 0; i < attr_exp_num - 1; i++) {
+      std::string str;
+      AstUtil::Print(str, exps_[i]);
+      os << str << " | ";
+    }
+    std::string str;
+    AstUtil::Print(str, exps_[attr_exp_num - 1]);
+    os << str << std::endl;
   }
 }
 

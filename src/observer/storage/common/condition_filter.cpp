@@ -20,7 +20,9 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/bitmap.h"
 #include <vector>
 #include <map>
-#include <sql/executor/executor_builder.h>
+#include "sql/executor/executor_builder.h"
+#include "sql/executor/exp_execution_node.h"
+#include "sql/executor/util.h"
 
 using namespace common;
 
@@ -358,6 +360,84 @@ bool CompositeCartesianFilter::filter(const Tuple &tuple) const {
   return true;
 }
 
+RC DefaultExpressionFilter::init(const CartesianConDesc &left, const CartesianConDesc &right, CompOp comp_op, const std::map<std::string, std::map<std::string, int>> &field_index) {
+  if (comp_op < EQUAL_TO || comp_op >= NO_OP) {
+    LOG_ERROR("Invalid condition with unsupported compare operation: %d", comp_op);
+    return RC::INVALID_ARGUMENT;
+  }
+
+  left_ = left;
+  right_ = right;
+  comp_op_ = comp_op;
+  field_index_ = &field_index;
+  return RC::SUCCESS;
+}
+
+bool DefaultExpressionFilter::filter(const Tuple &tuple) const {
+  std::shared_ptr<TupleValue> left_value, right_value;
+  if (left_.exp_ast != nullptr) {
+    RC rc = AstUtil::Calculate(left_value, tuple, *field_index_, left_.exp_ast);
+    if (rc != RC::SUCCESS) {
+      return false;
+    }
+  } else if (left_.is_attr) {
+    left_value = tuple.get_pointer(left_.value_index);
+  } else {
+    if (left_.value.type == AttrType::INTS) {
+      left_value = std::shared_ptr<TupleValue>(new FloatValue(*((int *)(left_.value.data))));  
+    } else if (left_.value.type == AttrType::FLOATS) {
+      left_value = std::shared_ptr<TupleValue>(new FloatValue(*((float *)(left_.value.data))));  
+    } else {
+      assert(false);
+    }
+  }
+  if (right_.exp_ast != nullptr) {
+    RC rc = AstUtil::Calculate(right_value, tuple, *field_index_, right_.exp_ast);
+    if (rc != RC::SUCCESS) {
+      return false;
+    }
+  } else if (right_.is_attr) {
+    right_value = tuple.get_pointer(right_.value_index);
+  } else {
+    if (right_.value.type == AttrType::INTS) {
+      right_value = std::shared_ptr<TupleValue>(new FloatValue(*((int *)(right_.value.data))));  
+    } else if (right_.value.type == AttrType::FLOATS) {
+      right_value = std::shared_ptr<TupleValue>(new FloatValue(*((float *)(right_.value.data))));  
+    } else {
+      assert(false);
+    }
+  }
+  assert(left_value->Type() == AttrType::FLOATS && right_value->Type() == AttrType::FLOATS);
+  if (left_value->Type() == AttrType::UNDEFINED || right_value->Type() == AttrType::UNDEFINED) {
+    return false;
+  }
+  int cmp_result = left_value->compare(*right_value);
+  return compare_result(cmp_result, comp_op_);
+}
+
+CompositeExpressionFilter::~CompositeExpressionFilter() {
+  if (memory_owner_) {
+    for (auto & filter : filters_) {
+      delete filter;
+    }
+  }
+}
+
+RC CompositeExpressionFilter::init(std::vector<DefaultExpressionFilter *> &&filters, bool own_memory) {
+  filters_ = std::move(filters);
+  memory_owner_ = own_memory;
+  return RC::SUCCESS;
+}
+
+bool CompositeExpressionFilter::filter(const Tuple &tuple) const {
+  for (const auto & filter : filters_) {
+    if (!filter->filter(tuple)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::shared_ptr<TupleValue> construct_tuple_value_from_value(const Value &value) {
   std::shared_ptr<TupleValue> result;
   switch (value.type) {
@@ -546,12 +626,15 @@ bool Filter::filter(const Record &rec) const {
  * @param condition
  */
 void change_to_true_condition(Condition &condition) {
+  condition.left_ast = nullptr;
   condition.left_is_attr = 0;
   condition.left_is_select = 0;
   condition.left_value.type = INTS;
   condition.left_value.data = malloc(sizeof(0));
   memset(condition.left_value.data, 0, sizeof(0));
 
+  
+  condition.right_ast = nullptr;
   condition.comp = EQUAL_TO;
   condition.right_is_attr = 0;
   condition.right_is_select = 0;

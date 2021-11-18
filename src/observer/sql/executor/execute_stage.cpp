@@ -30,6 +30,7 @@ See the Mulan PSL v2 for more details. */
 #include "event/execution_plan_event.h"
 #include "sql/executor/execution_node.h"
 #include "sql/executor/aggregate_execution_node.h"
+#include "sql/executor/exp_execution_node.h"
 #include "storage/common/table.h"
 #include "storage/default/default_handler.h"
 #include "storage/common/condition_filter.h"
@@ -464,10 +465,23 @@ RC ExecuteStage::do_select(const char *db, Query *sql, SessionEvent *session_eve
     // 5. 生成输出tupleset
     OutputExeNode outputExeNode;
     rc = create_output_executor(trx, selects, db, std::move(tmp_tuple_set), outputExeNode, field_index);
+    
+    {
+      // 6. 在执行output_node.execute()之前，先处理一下表达式
+      // todo(wq): expression流转到exp直接打印返回，先通过样例再考虑重构
+      ExpExeNode expression_exe_node;
+      rc = create_expression_executor(selects, expression_exe_node, std::move(outputExeNode.TmpTupleSet()), outputExeNode.OutputSchema(), field_index);
+      assert(rc == RC::SUCCESS);
+      TupleSet exp_tuple_set;
+      expression_exe_node.execute(exp_tuple_set);
+      exp_tuple_set.print(ss, is_multi_table);
+      session_event->set_response(ss.str());
+      end_trx_if_need(session, trx, true);
+      return rc;
+    }
     assert(rc == RC::SUCCESS);
     TupleSet output_tuple_set;
     outputExeNode.execute(output_tuple_set);
-
     output_tuple_set.print(ss, is_multi_table);
   }
   session_event->set_response(ss.str());
@@ -541,6 +555,9 @@ RC create_selection_executor(Trx *trx, const Selects &selects, const char *db, c
   std::vector<DefaultConditionFilter *> condition_filters;
   for (size_t i = 0; i < selects.condition_num; i++) {
     const Condition &condition = selects.conditions[i];
+    if (condition.left_ast != nullptr || condition.right_ast != nullptr) {
+      continue;
+    }
     if ((condition.left_is_attr == 0 && condition.right_is_attr == 0) || // 两边都是值
         (condition.left_is_attr == 1 && condition.right_is_attr == 0 && match_table(selects, condition.left_attr.relation_name, table_name)) ||  // 左边是属性右边是值
         (condition.left_is_attr == 0 && condition.right_is_attr == 1 && match_table(selects, condition.right_attr.relation_name, table_name)) ||  // 左边是值，右边是属性名

@@ -107,8 +107,11 @@ private:
 
 
 struct CartesianConDesc {
-  int table_index;
+  int table_index; // todo(wq): deprecated??
   int value_index;
+  ast *exp_ast; // 非空才判断是否是属性
+  int is_attr; // 如果是属性，直接记录索引即可，否则记录值
+  Value value;
 };
 
 class CartesianFilter {
@@ -152,6 +155,32 @@ private:
   bool memory_owner_ = false; // filters_的内存是否由自己来控制
 };
 
+// 由于表达式的条件也涉及多表，因此继承CartesianFilter的接口
+class DefaultExpressionFilter : public CartesianFilter  {
+public:
+  DefaultExpressionFilter() = default;
+  virtual ~DefaultExpressionFilter() = default;
+  virtual bool filter(const Tuple &tuple) const override;
+  RC init(const CartesianConDesc &left, const CartesianConDesc &right, CompOp comp_op, const std::map<std::string, std::map<std::string, int>> &field_index);
+private:
+  CartesianConDesc  left_;
+  CartesianConDesc  right_;
+  CompOp comp_op_ = NO_OP;
+  const std::map<std::string, std::map<std::string, int>> *field_index_;
+};
+
+class CompositeExpressionFilter : public DefaultExpressionFilter {
+public:
+  CompositeExpressionFilter() = default;
+  virtual ~CompositeExpressionFilter();
+
+  RC init(std::vector<DefaultExpressionFilter *> &&filters, bool own_memory=false);
+  virtual bool filter(const Tuple &tuple) const override;
+
+private:
+  std::vector<DefaultExpressionFilter *> filters_;
+  bool memory_owner_ = false; // filters_的内存是否由自己来控制
+};
 
 struct FilterDesc {
   bool is_attr;

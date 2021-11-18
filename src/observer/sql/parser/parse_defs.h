@@ -279,6 +279,7 @@ void relation_attr_init(RelAttr *relation_attr, const char *relation_name, const
 void relation_attr_destroy(RelAttr *relation_attr);
 
 void relation_aggre_init(Aggregate *aggregate, AggreType aggreType, int is_attr, const char *relation_name, const char *attribute_name, Value* value);
+void relation_aggre_init_with_exp(Aggregate *aggregate, AggreType aggreType, ast *a);
 void relation_aggre_destroy(Aggregate *aggregate);
 
 void value_init_null(Value *value);
@@ -309,6 +310,9 @@ void selects_append_group(Selects *selects, RelAttr *rel_attr);
 void selects_append_joins(Selects *selects, Join joins[], size_t join_num);
 void selects_destroy(Selects *selects);
 
+// 该函数的作用是向后兼容，由于'-'号被从value里提了出来（无法词法解析负数）
+// 因此，负数用表达式解析同时，将exp的值塞回value
+void context_value_init(ast *a, Value *value);
 void inserts_init(Inserts *inserts, const char *relation_name);
 void inserts_destroy(Inserts *inserts);
 void inserts_append_values(Inserts *inserts, size_t pair_num, Value values[], size_t value_num);

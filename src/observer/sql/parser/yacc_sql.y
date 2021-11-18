@@ -368,7 +368,7 @@ ID_get:
 
 	
 insert:				/*insert   语句的语法解析树*/
-    INSERT INTO ID VALUES LBRACE value value_list RBRACE insert_pair_list SEMICOLON 
+    INSERT INTO ID VALUES LBRACE insert_exp value_list RBRACE insert_pair_list SEMICOLON 
 		{
 			// CONTEXT->values[CONTEXT->value_length++] = *$6;
 
@@ -385,22 +385,22 @@ insert:				/*insert   语句的语法解析树*/
 			CONTEXT->value_length=0;
     }
 
+insert_exp:
+	exp { context_value_init($1, &(CONTEXT->values[CONTEXT->value_length - 1])); }
+	;
+
 value_list:
     /* empty */ {
-		// TODO(wq): 插入数据
 		// 递增pair_num, 清零value_length
 		inserts_append_values(&CONTEXT->ssql->sstr.insertion, CONTEXT->insert_pair_num++, CONTEXT->values, CONTEXT->value_length);
 		CONTEXT->value_length=0;
 	}
-    | COMMA value value_list  { 
-  		// CONTEXT->values[CONTEXT->value_length++] = *$2;
-	}
+    | COMMA insert_exp value_list
     ;
 
 insert_pair_list:
 	/* empty */
-	| COMMA LBRACE value value_list RBRACE insert_pair_list {
-		}
+	| COMMA LBRACE insert_exp value_list RBRACE insert_pair_list
 	;
 
 value:
@@ -477,9 +477,10 @@ update_begin:
    ;
 
 update:			/*  update 语句的语法解析树*/
-    update_begin ID SET ID EQ value where SEMICOLON
+    update_begin ID SET ID EQ exp where SEMICOLON
 		{
 			CONTEXT->ssql->flag = SCF_UPDATE;//"update";
+			context_value_init($6, &CONTEXT->values[0]);
 			Value *value = &CONTEXT->values[0];
 			updates_init(&CONTEXT->ssql->sstr.update, $2, $4, value, 
 					CONTEXT->conditions[0], CONTEXT->condition_length[0]);
@@ -548,20 +549,9 @@ attr_list:
 	;
 
 aggre_func:
-	aggre_type LBRACE value RBRACE {
+	aggre_type LBRACE exp RBRACE {
 		Aggregate aggre;
-		Value *value = &CONTEXT->values[CONTEXT->value_length - 1];
-		relation_aggre_init(&aggre, CONTEXT->aggreType[CONTEXT->select_length-1], 0, NULL, NULL, value);
-		selects_append_aggregate(&CONTEXT->selects[CONTEXT->select_length-1], &aggre);
-	  }
-	| aggre_type LBRACE ID RBRACE {
-		Aggregate aggre;
-		relation_aggre_init(&aggre, CONTEXT->aggreType[CONTEXT->select_length-1], 1, NULL, $3, NULL);
-		selects_append_aggregate(&CONTEXT->selects[CONTEXT->select_length-1], &aggre);
-	  }
-	| aggre_type LBRACE ID DOT ID RBRACE {
-		Aggregate aggre;
-		relation_aggre_init(&aggre, CONTEXT->aggreType[CONTEXT->select_length-1], 1, $3, $5, NULL);
+		relation_aggre_init_with_exp(&aggre, CONTEXT->aggreType[CONTEXT->select_length-1], $3);
 		selects_append_aggregate(&CONTEXT->selects[CONTEXT->select_length-1], &aggre);
 	  }
 	| aggre_type LBRACE STAR RBRACE {

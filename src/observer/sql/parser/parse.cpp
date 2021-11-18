@@ -53,6 +53,45 @@ void relation_aggre_init(Aggregate *aggregate, AggreType aggreType, int is_attr,
   }
 }
 
+
+void relation_aggre_init_with_exp(Aggregate *aggregate, AggreType aggreType, ast *a) {
+  aggregate->aggre_type = aggreType;
+  aggregate->is_attr = 0;
+
+  switch (a->nodetype) {
+  case NodeType::SUBN: {
+    assert(a->l == nullptr && a->r != nullptr);
+    // 负数 需要对原值取负
+    Value &v = ((valnode *)(a))->value;
+    if (v.type == AttrType::INTS) {
+      int old = *((int *)(v.data));
+      *((int *)(v.data)) = -old;
+    } else if (v.type = AttrType::FLOATS) {
+      float old = *((float *)(v.data));
+      *((float *)(v.data)) = -old;
+    } else {
+      assert(false); 
+    }
+    aggregate->value = v;
+  } break;
+  case NodeType::VALN: {
+    aggregate->value = ((valnode *)a)->value;
+  } break;
+  case NodeType::ATTRN: {
+    aggregate->is_attr = 1;
+    RelAttr &attr = ((attrnode *)a)->attr;
+    if (attr.relation_name != nullptr) {
+      aggregate->attr.relation_name = strdup(attr.relation_name);
+    } else {
+      aggregate->attr.relation_name = nullptr;
+    }
+    aggregate->attr.attribute_name = strdup(attr.attribute_name);
+  } break;
+  default:
+    break;
+  }
+}
+
 void relation_aggre_destroy(Aggregate *aggregate) {
   free(aggregate->attr.relation_name);
   free(aggregate->attr.attribute_name);
@@ -272,6 +311,29 @@ void selects_destroy(Selects *selects) {
 void selects_append_joins(Selects *selects, Join joins[], size_t join_num) {
   for (size_t i = 0; i < join_num; i++) {
     selects->joins[selects->join_num++] = joins[i];
+  }
+}
+
+void context_value_init(ast *a, Value *value) {
+  if (a->nodetype == NodeType::VALN) {
+    // 原封不动
+    Value &v = ((valnode *)(a))->value;
+    *value = v; 
+  } else if (a->nodetype == NodeType::SUBN && a->r->nodetype == NodeType::VALN) {
+    // 负数 需要对原值取负
+    Value &v = ((valnode *)(a->r))->value;
+    if (v.type == AttrType::INTS) {
+      int old = *((int *)(v.data));
+      *((int *)(v.data)) = -old;
+    } else if (v.type == AttrType::FLOATS) {
+      float old = *((float *)(v.data));
+      *((float *)(v.data)) = -old;
+    } else {
+      assert(false); 
+    }
+    *value = v;
+  } else {
+    assert(false);
   }
 }
 

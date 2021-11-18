@@ -119,7 +119,7 @@ public:
       other_value = (float)*(int*)other.value_pointer();
     }
     float result = value_ - other_value;
-    if (-1e-5 < result && result < 1e-5) {
+    if (-1e-3 < result && result < 1e-3) {
       return 0;
     }
     if (result > 0) { // 浮点数没有考虑精度问题

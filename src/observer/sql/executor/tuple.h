@@ -168,10 +168,16 @@ public:
   void aggre_type_print(std::ostream &os, AggreType type) const;
 
   void aggre_attr_print(std::ostream &os, int aggre_index) const;
+
+  void add_exp(ast *a) { exps_.push_back(a); }
+  const std::vector<ast *> &get_exps() const { return exps_; }
+  void exp_print(std::ostream &os, int exp_index);
+  bool has_expression() const { return exps_.size() > 0; }
 private:
   std::vector<TupleField> fields_;
   std::map<std::string, std::map<std::string, int>> table_field_index_;
   std::vector<std::shared_ptr<AggreDesc>> agg_descs_;
+  std::vector<ast *> exps_; //由于表头的表达式要原样打印出来，因此辅助打印
 };
 
 class TupleSet {

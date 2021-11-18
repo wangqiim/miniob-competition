@@ -33,3 +33,19 @@ private:
   static const std::map<std::string, std::map<std::string, int>> *field_index_;
   static const TupleSchema *order_by_schema_;
 };
+
+class AstUtil {
+public:
+	/**
+	 * value: 返回值
+	 * tuple: 需要求值的tuple
+	 * tuple_schema: tuple对应的schema
+	 * 用来求对应tuple通过expression_ast产生的值，如果计算出错，则返回NullValue
+	 */
+  static RC Calculate(std::shared_ptr<TupleValue> &value, const Tuple &tuple, const std::map<std::string, std::map<std::string, int>> &field_index, ast *a);
+
+
+  static RC PrintNodeType(std::string &str, NodeType node_type);
+  static RC PrintValue(std::string &str, Value &value);
+  static RC Print(std::string &str, ast *a);
+};

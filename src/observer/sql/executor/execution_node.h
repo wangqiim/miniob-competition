@@ -74,6 +74,9 @@ public:
           const std::map<std::string, std::map<std::string, int>> &field_index);
 
   RC execute(TupleSet &output_tuple_set) override;
+
+  TupleSet &TmpTupleSet() { return tuple_set_; }
+  TupleSchema &OutputSchema() { return output_tuple_schema_; }
 private:
   Trx *trx_ = nullptr;
   TupleSet tuple_set_;

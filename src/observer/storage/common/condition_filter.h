@@ -199,6 +199,8 @@ public:
 
   bool filter(const Tuple &left_tuple, TupleSchema &left_schema, const Tuple &right_tuple, TupleSchema &right_schema) const;
 
+  bool filter(const Tuple &tuple, TupleSchema &tuple_schema);
+
   // 绑定单个Table，初始化left_和right_中的attr_length和attr_offset
   // left_和right_中的table_name必须是相同的，否则当前filter不能作为对单个Table的Record进行过滤
   RC bind_table(Table *table);
@@ -208,6 +210,8 @@ public:
   bool filter(const Record &rec) const;
 
   static void from_condition(Condition *conditions, size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all, bool attr_only=false, Db *db=nullptr);
+
+  static Filter* from_condition(Condition &condition, bool &ban_all, Table *table=nullptr, bool attr_only=false, Db *db=nullptr);
 
   FilterDesc &left() { return left_; }
   FilterDesc &right() { return right_; }

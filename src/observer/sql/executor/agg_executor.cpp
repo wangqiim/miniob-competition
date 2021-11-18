@@ -19,8 +19,9 @@ RC AggExecutor::next(TupleSet &tuple_set, std::vector<Filter*> *filters) {
   tuple_set.set_schema(output_schema_);
 
   TupleSet left_tuple_set;
-  executor_->next(left_tuple_set);
+  executor_->next(left_tuple_set, filters);
   TupleSchema left_output_schema = executor_->output_schema();
+  aht_.clear();
   for (const auto &tuple : left_tuple_set.tuples()) {
     AggregateKey agg_key = MakeKey(left_output_schema, &tuple);
     AggregateValue agg_val = MakeVal(left_output_schema, &tuple);

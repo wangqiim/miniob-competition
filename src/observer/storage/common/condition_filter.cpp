@@ -478,33 +478,30 @@ std::shared_ptr<TupleValue> construct_tuple_value_from_selects(Db *db, Selects *
   return tuple_set.get(0).get_pointer(0);
 }
 
-std::shared_ptr<TupleValue> construct_desc_value(const FilterDesc &filter, const Tuple &left_tuple, TupleSchema &left_schema, const Tuple &right_tuple, TupleSchema &right_schema) {
-  const std::map<std::string, std::map<std::string, int>> &left_field_index = left_schema.table_field_index();
-  const std::map<std::string, std::map<std::string, int>> &right_field_index = right_schema.table_field_index();
+std::shared_ptr<TupleValue> construct_desc_value(const FilterDesc &filter, const Tuple &tuple, TupleSchema &schema) {
+  const std::map<std::string, std::map<std::string, int>> &field_index = schema.table_field_index();
   std::shared_ptr<TupleValue> value;
   if (filter.is_attr) {
-    auto find_left_table = left_field_index.find(filter.table_name);
-    if (find_left_table != left_field_index.end()) {
-      auto find_left_field = find_left_table->second.find(filter.field_name);
-      if (find_left_field == find_left_table->second.end()) {
-        return nullptr;
-      }
-      int left_index = find_left_field->second;
-      value = left_tuple.get_pointer(left_index);
-    } else {
-      auto find_right_table = right_field_index.find(filter.table_name);
-      if (find_right_table == right_field_index.end()) {
-        return nullptr;
-      }
-      auto find_right_field = find_right_table->second.find(filter.field_name);
-      if (find_right_field == find_right_table->second.end()) {
-        return nullptr;
-      }
-      int right_index = find_right_field->second;
-      value = right_tuple.get_pointer(right_index);
+    auto find_table = field_index.find(filter.table_name);
+    if (find_table == field_index.end()) {
+      return nullptr;
     }
+    auto find_field = find_table->second.find(filter.field_name);
+    if (find_field == find_table->second.end()) {
+      return nullptr;
+    }
+    value = tuple.get_pointer(find_field->second);
   } else {
     value = construct_tuple_value_from_value(filter.value);
+  }
+  return value;
+}
+
+std::shared_ptr<TupleValue> construct_desc_value(const FilterDesc &filter, const Tuple &left_tuple, TupleSchema &left_schema, const Tuple &right_tuple, TupleSchema &right_schema) {
+  std::shared_ptr<TupleValue> value;
+  value = construct_desc_value(filter, left_tuple, left_schema);
+  if (value == nullptr) {
+    value = construct_desc_value(filter, right_tuple, right_schema);
   }
   return value;
 }
@@ -515,6 +512,19 @@ bool Filter::filter(const Tuple &left_tuple, TupleSchema &left_schema, const Tup
     return false;
   }
   std::shared_ptr<TupleValue> right_value = construct_desc_value(right_, left_tuple, left_schema, right_tuple, right_schema);
+  if (right_value == nullptr) {
+    return false;
+  }
+  int cmp_result = left_value->compare(*right_value);
+  return compare_result(cmp_result, comp_op_);
+}
+
+bool Filter::filter(const Tuple &tuple, TupleSchema &tuple_schema) {
+  std::shared_ptr<TupleValue> left_value = construct_desc_value(left_, tuple, tuple_schema);
+  if (left_value == nullptr) {
+    return false;
+  }
+  std::shared_ptr<TupleValue> right_value = construct_desc_value(right_, tuple, tuple_schema);
   if (right_value == nullptr) {
     return false;
   }
@@ -643,6 +653,83 @@ void change_to_true_condition(Condition &condition) {
   memset(condition.right_value.data, 0, sizeof(0));
 }
 
+Filter* Filter::from_condition(Condition &condition, bool &ban_all, Table *table, bool attr_only, Db *db) {
+  FilterDesc left_filter_desc;
+  left_filter_desc.is_attr = (condition.left_is_attr == 1);
+  FilterDesc right_filter_desc;
+  right_filter_desc.is_attr = (condition.right_is_attr == 1);
+  // 1. left & right 都是子查询
+  if ((!condition.left_is_attr || condition.left_is_select) &&
+  (!condition.right_is_attr || condition.right_is_select)) {
+    std::shared_ptr<TupleValue> left_value;
+    std::shared_ptr<TupleValue> right_value;
+    if (condition.left_is_select) {
+      left_value = construct_tuple_value_from_selects(db, condition.left_selects);
+    } else { // left_is_select
+      assert(!condition.left_is_attr);
+      left_value = construct_tuple_value_from_value(condition.left_value);
+    }
+    if (condition.right_is_select) {
+      right_value = construct_tuple_value_from_selects(db, condition.right_selects);
+    } else { // right_is_select
+      assert(!condition.right_is_attr);
+      right_value = construct_tuple_value_from_value(condition.right_value);
+    }
+    int cmp_result = left_value->compare(*right_value);
+    if (compare_result(cmp_result, condition.comp)) {
+      // 该条件后续都不需要关注了，特别针对子查询的情况，防止后续条件再次进行子查询进行条件判断
+      change_to_true_condition(condition);
+    } else {
+      ban_all = true;
+    }
+    return nullptr;
+  }
+
+  // 2. left 是子查询 或者 right是子查询
+  if (condition.left_is_select || condition.right_is_select) {
+    return nullptr;
+  }
+
+  // 3. left 和 right两边都不是子查询
+  if (left_filter_desc.is_attr) {
+    if (table != nullptr && condition.left_attr.relation_name != nullptr && strcmp(condition.left_attr.relation_name, table->name()) != 0) {
+      return nullptr;
+    }
+    if (condition.left_attr.relation_name == nullptr) {
+      assert(table != nullptr);
+      left_filter_desc.table_name = table->name();
+    } else {
+      left_filter_desc.table_name = condition.left_attr.relation_name;
+    }
+    left_filter_desc.field_name = condition.left_attr.attribute_name;
+  } else {
+    if (attr_only) {
+      return nullptr;
+    } else {
+      left_filter_desc.value = condition.left_value;
+    }
+  }
+  if (right_filter_desc.is_attr) {
+    if (table != nullptr && condition.right_attr.relation_name != nullptr && strcmp(condition.right_attr.relation_name, table->name()) != 0) {
+      return nullptr;
+    }
+    if (condition.right_attr.relation_name == nullptr) {
+      assert(table != nullptr);
+      right_filter_desc.table_name = table->name();
+    } else {
+      right_filter_desc.table_name = condition.right_attr.relation_name;
+    }
+    right_filter_desc.field_name = condition.right_attr.attribute_name;
+  } else {
+    if (attr_only) {
+      return nullptr;
+    } else {
+      right_filter_desc.value = condition.right_value;
+    }
+  }
+  return new Filter(left_filter_desc, right_filter_desc, condition.comp);
+}
+
 /**
  * 依据conditions构造filters
  * @param conditions
@@ -654,85 +741,17 @@ void change_to_true_condition(Condition &condition) {
  */
 void  Filter::from_condition(Condition *conditions, size_t condition_num, Table *table, std::vector<Filter*> &filters, bool &ban_all, bool attr_only, Db *db) {
   ban_all = false;
+  Filter *filter;
   for (int i = 0; i < condition_num; ++i) {
     Condition &condition = conditions[i];
-
-    FilterDesc left_filter_desc;
-    left_filter_desc.is_attr = (condition.left_is_attr == 1);
-    FilterDesc right_filter_desc;
-    right_filter_desc.is_attr = (condition.right_is_attr == 1);
-    // 1. left & right 都是子查询
-    if ((!condition.left_is_attr || condition.left_is_select) &&
-        (!condition.right_is_attr || condition.right_is_select)) {
-      std::shared_ptr<TupleValue> left_value;
-      std::shared_ptr<TupleValue> right_value;
-      if (condition.left_is_select) {
-        left_value = construct_tuple_value_from_selects(db, condition.left_selects);
-      } else { // left_is_select
-        assert(!condition.left_is_attr);
-        left_value = construct_tuple_value_from_value(condition.left_value);
-      }
-      if (condition.right_is_select) {
-        right_value = construct_tuple_value_from_selects(db, condition.right_selects);
-      } else { // right_is_select
-        assert(!condition.right_is_attr);
-        right_value = construct_tuple_value_from_value(condition.right_value);
-      }
-      int cmp_result = left_value->compare(*right_value);
-      if (compare_result(cmp_result, condition.comp)) {
-        // 该条件后续都不需要关注了，特别针对子查询的情况，防止后续条件再次进行子查询进行条件判断
-        change_to_true_condition(condition);
-        continue;
-      } else {
-        filters.clear();
-        ban_all = true;
-        break;
-      }
+    filter = Filter::from_condition(condition, ban_all, table, attr_only, db);
+    if (ban_all) {
+      filters.clear();
+      return;
     }
-
-    // 2. left 是子查询 或者 right是子查询
-    if (condition.left_is_select || condition.right_is_select) {
+    if (filter == nullptr) {
       continue;
     }
-
-    // 3. left 和 right两边都不是子查询
-    if (left_filter_desc.is_attr) {
-      if (table != nullptr && condition.left_attr.relation_name != nullptr && strcmp(condition.left_attr.relation_name, table->name()) != 0) {
-        continue;
-      }
-      if (condition.left_attr.relation_name == nullptr) {
-        assert(table != nullptr);
-        left_filter_desc.table_name = table->name();
-      } else {
-        left_filter_desc.table_name = condition.left_attr.relation_name;
-      }
-      left_filter_desc.field_name = condition.left_attr.attribute_name;
-    } else {
-      if (attr_only) {
-        continue;
-      } else {
-        left_filter_desc.value = condition.left_value;
-      }
-    }
-    if (right_filter_desc.is_attr) {
-      if (table != nullptr && condition.right_attr.relation_name != nullptr && strcmp(condition.right_attr.relation_name, table->name()) != 0) {
-        continue;
-      }
-      if (condition.right_attr.relation_name == nullptr) {
-        assert(table != nullptr);
-        right_filter_desc.table_name = table->name();
-      } else {
-        right_filter_desc.table_name = condition.right_attr.relation_name;
-      }
-      right_filter_desc.field_name = condition.right_attr.attribute_name;
-    } else {
-      if (attr_only) {
-        continue;
-      } else {
-        right_filter_desc.value = condition.right_value;
-      }
-    }
-    auto *filter = new Filter(left_filter_desc, right_filter_desc, condition.comp);
     filters.push_back(filter);
   }
 }

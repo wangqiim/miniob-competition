@@ -122,6 +122,10 @@ class SimpleAggregationHashTable {
     CombineAggregateValues(&ht_[agg_key], agg_val);
   }
 
+  void clear() {
+    ht_.clear();
+  }
+
   /**
    * An iterator through the simplified aggregation hash table.
    */

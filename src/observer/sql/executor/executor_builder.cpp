@@ -160,24 +160,6 @@ CompOp symmetric_op(CompOp op) {
   }
 }
 
-void sub_selects_init(Selects* selects) {
-  // 当子查询的查询条件中出现了多个table_name，那么将该子查询认为是多表查询
-  std::unordered_set<std::string> table_name_set;
-  for (int i = 0; i < selects->relation_num; ++i) {
-    table_name_set.insert(selects->relations[i]);
-  }
-  for (int i = 0; i < selects->condition_num; ++i) {
-    Condition condition = selects->conditions[i];
-    if (condition.left_is_attr && condition.left_attr.relation_name != nullptr && table_name_set.count(condition.left_attr.relation_name) == 0) {
-      selects->relations[selects->relation_num++] = condition.left_attr.relation_name;
-      table_name_set.insert(condition.left_attr.relation_name);
-    }
-    if (condition.right_is_attr && condition.right_attr.relation_name != nullptr && table_name_set.count(condition.right_attr.relation_name) == 0) {
-      selects->relations[selects->relation_num++] = condition.right_attr.relation_name;
-      table_name_set.insert(condition.right_attr.relation_name);
-    }
-  }
-}
 
 Executor *ExecutorBuilder::build_sub_query_executor(Executor *executor, char *table_name, Condition conditions[], size_t condition_num) {
   Executor *right_executor;
@@ -188,20 +170,40 @@ Executor *ExecutorBuilder::build_sub_query_executor(Executor *executor, char *ta
       continue;
     }
     if (condition.left_is_select) {
-      sub_selects_init(condition.left_selects);
       right_executor = build(condition.left_selects);
       if (condition.right_attr.relation_name == nullptr) {
         condition.right_attr.relation_name = table_name;
       }
-      left_executor = new SubQueryExecutor(nullptr, left_executor, condition.right_attr, symmetric_op(condition.comp), right_executor);
+      auto multi_table_conditions = new std::vector<Condition>;
+      for (int j = 0; j < condition.left_selects->condition_num; j ++) {
+        Condition sub_select_condition = condition.left_selects->conditions[j];
+        if (sub_select_condition.left_is_attr && sub_select_condition.right_is_attr
+            && sub_select_condition.left_attr.relation_name != nullptr
+            && sub_select_condition.right_attr.relation_name != nullptr
+            && (strcmp(sub_select_condition.left_attr.relation_name, table_name) == 0 || strcmp(sub_select_condition.right_attr.relation_name, table_name) == 0)
+                ) {
+          multi_table_conditions->push_back(sub_select_condition);
+        }
+      }
+      left_executor = new SubQueryExecutor(nullptr, left_executor, condition.right_attr, symmetric_op(condition.comp), right_executor, std::move(*multi_table_conditions));
     }
     if (condition.right_is_select) {
-      sub_selects_init(condition.right_selects);
       right_executor = build(condition.right_selects);
       if (condition.left_attr.relation_name == nullptr) {
         condition.left_attr.relation_name = table_name;
       }
-      left_executor = new SubQueryExecutor(nullptr, left_executor, condition.left_attr, condition.comp, right_executor);
+      auto multi_table_conditions = new std::vector<Condition>;
+      for (int j = 0; j < condition.right_selects->condition_num; j ++) {
+        Condition sub_select_condition = condition.right_selects->conditions[j];
+        if (sub_select_condition.left_is_attr && sub_select_condition.right_is_attr
+            && sub_select_condition.left_attr.relation_name != nullptr
+            && sub_select_condition.right_attr.relation_name != nullptr
+            && (strcmp(sub_select_condition.left_attr.relation_name, table_name) == 0 || strcmp(sub_select_condition.right_attr.relation_name, table_name) == 0)
+        ) {
+          multi_table_conditions->push_back(sub_select_condition);
+        }
+      }
+      left_executor = new SubQueryExecutor(nullptr, left_executor, condition.left_attr, condition.comp, right_executor, std::move(*multi_table_conditions));
     }
   }
   return left_executor;

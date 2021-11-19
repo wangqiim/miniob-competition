@@ -160,6 +160,36 @@ CompOp symmetric_op(CompOp op) {
   }
 }
 
+void build_multi_table_conditions(char *table_name, Condition conditions[], size_t condition_num, std::vector<Condition> *multi_table_conditions) {
+  std::stack<Condition*> condition_stack;
+  std::stack<size_t> condition_num_stack;
+  condition_stack.push(conditions);
+  condition_num_stack.push(condition_num);
+  while (!condition_num_stack.empty()) {
+    Condition *current_conditions = condition_stack.top();
+    size_t current_condition_num = condition_num_stack.top();
+    condition_stack.pop();
+    condition_num_stack.pop();
+    for(size_t i = 0; i < current_condition_num; i++) {
+      Condition condition = current_conditions[i];
+      if (condition.left_is_attr && condition.right_is_attr
+      && condition.left_attr.relation_name != nullptr
+      && condition.right_attr.relation_name != nullptr
+      && (strcmp(condition.left_attr.relation_name, table_name) == 0 || strcmp(condition.right_attr.relation_name, table_name) == 0)
+      ) {
+        multi_table_conditions->push_back(condition);
+      }
+      if (condition.right_is_select) {
+        condition_stack.push(condition.right_selects->conditions);
+        condition_num_stack.push(condition.right_selects->condition_num);
+      }
+      if (condition.left_is_select) {
+        condition_stack.push(condition.left_selects->conditions);
+        condition_num_stack.push(condition.left_selects->condition_num);
+      }
+    }
+  }
+}
 
 Executor *ExecutorBuilder::build_sub_query_executor(Executor *executor, char *table_name, Condition conditions[], size_t condition_num) {
   Executor *right_executor;
@@ -175,16 +205,7 @@ Executor *ExecutorBuilder::build_sub_query_executor(Executor *executor, char *ta
         condition.right_attr.relation_name = table_name;
       }
       auto multi_table_conditions = new std::vector<Condition>;
-      for (int j = 0; j < condition.left_selects->condition_num; j ++) {
-        Condition sub_select_condition = condition.left_selects->conditions[j];
-        if (sub_select_condition.left_is_attr && sub_select_condition.right_is_attr
-            && sub_select_condition.left_attr.relation_name != nullptr
-            && sub_select_condition.right_attr.relation_name != nullptr
-            && (strcmp(sub_select_condition.left_attr.relation_name, table_name) == 0 || strcmp(sub_select_condition.right_attr.relation_name, table_name) == 0)
-                ) {
-          multi_table_conditions->push_back(sub_select_condition);
-        }
-      }
+      build_multi_table_conditions(table_name, condition.left_selects->conditions, condition.left_selects->condition_num, multi_table_conditions);
       left_executor = new SubQueryExecutor(nullptr, left_executor, condition.right_attr, symmetric_op(condition.comp), right_executor, std::move(*multi_table_conditions));
     }
     if (condition.right_is_select) {
@@ -193,16 +214,7 @@ Executor *ExecutorBuilder::build_sub_query_executor(Executor *executor, char *ta
         condition.left_attr.relation_name = table_name;
       }
       auto multi_table_conditions = new std::vector<Condition>;
-      for (int j = 0; j < condition.right_selects->condition_num; j ++) {
-        Condition sub_select_condition = condition.right_selects->conditions[j];
-        if (sub_select_condition.left_is_attr && sub_select_condition.right_is_attr
-            && sub_select_condition.left_attr.relation_name != nullptr
-            && sub_select_condition.right_attr.relation_name != nullptr
-            && (strcmp(sub_select_condition.left_attr.relation_name, table_name) == 0 || strcmp(sub_select_condition.right_attr.relation_name, table_name) == 0)
-        ) {
-          multi_table_conditions->push_back(sub_select_condition);
-        }
-      }
+      build_multi_table_conditions(table_name, condition.right_selects->conditions, condition.right_selects->condition_num, multi_table_conditions);
       left_executor = new SubQueryExecutor(nullptr, left_executor, condition.left_attr, condition.comp, right_executor, std::move(*multi_table_conditions));
     }
   }

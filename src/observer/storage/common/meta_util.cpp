@@ -45,17 +45,17 @@ RC DateUtil::Check_and_format_date(void *data) {
 		return RC::SCHEMA_FIELD_TYPE_MISMATCH;
 	}
 	int y = atoi(datas);
-	datas = strchr(datas, '-');
-	int m = atoi(datas + 1);
-	datas = strchr(datas + 1, '-');
-	int d = atoi(datas + 1);
+	datas = strchr(datas, '-') + 1;
+	int m = atoi(datas);
+	datas = strchr(datas, '-') + 1;
+	int d = atoi(datas);
 	if (y < 0 || m < 0 || d < 0) {
 		return RC::SCHEMA_FIELD_TYPE_MISMATCH;
 	}
 
 	// https://blog.csdn.net/qq_45672975/article/details/104353064
 	int leapyear = 0;
-	if ((y % 400 == 0) || (y % 4 == 0 && y % 400 != 0)){
+	if ((y % 400 == 0) || (y % 4 == 0 && y % 100 != 0)){
 		leapyear = 1; 
 	}
 	if (m > 12 || m < 1 || d > 31 || d < 1 ||
